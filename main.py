@@ -11,15 +11,18 @@
 
 # 导入所需依赖
 import sys
+
+from PyQt5.QtGui import QColor, QLinearGradient
 from PyQt5.QtWidgets import QLabel, QStackedWidget, QHeaderView, QAction, QTableWidgetItem, QVBoxLayout, QHBoxLayout, \
-    QWidget, QApplication
+    QWidget, QApplication, QAbstractItemView
 from PyQt5.QtCore import Qt
 from qfluentwidgets import NavigationItemPosition, isDarkTheme, FluentIcon, NavigationBar, FluentTitleBar, ProgressBar, \
-    setThemeColor
+    setThemeColor, FlowLayout, PillPushButton, RoundMenu
 from qfluentwidgets.common.animation import BackgroundAnimationWidget
 from qfluentwidgets.components.widgets.frameless_window import FramelessWindow
 import kvkapi
 from pages import library
+from webbrowser import open as web_open
 
 
 class Widget(QWidget):
@@ -126,6 +129,7 @@ class MainWindow(AcrylicWindow):
             position=NavigationItemPosition.TOP,
         )
 
+        # 复习
         self.stackWidget.addWidget(self.pageReview)
         self.navigationBar.addItem(
             routeKey=self.pageReview.objectName(),
@@ -133,6 +137,16 @@ class MainWindow(AcrylicWindow):
             text="复习",
             onClick=lambda: self.stackWidget.setCurrentWidget(self.pageReview),
             position=NavigationItemPosition.TOP,
+        )
+
+        # 关于
+        self.navigationBar.addItem(
+            routeKey="About",
+            icon=FluentIcon.HELP,
+            text="关于",
+            onClick=lambda: web_open("https://github.com/BirchFst/KVKnowledge/"),
+            position=NavigationItemPosition.BOTTOM,
+            selectable=False,
         )
 
         self.navigationBar.setCurrentItem(self.pageLibrary.objectName())
@@ -155,26 +169,92 @@ def setHighDpi():
 class PageLibrary(QWidget, library.Ui_PageLibrary):
     """库页面Widget"""
 
+    sortOrder = 0x00
+    sortOrderOptions = {
+        0x00: ["创建日期", FluentIcon.DATE_TIME.icon()],
+        0x01: ["创建日期(倒序)", FluentIcon.DATE_TIME.icon()],
+        0x02: ["名称 A-Z", FluentIcon.TAG.icon()],
+        0x03: ["名称 Z-A", FluentIcon.TAG.icon()],
+        0x04: ["掌握程度", FluentIcon.MARKET.icon()],
+        0x05: ["掌握程度(倒叙)", FluentIcon.MARKET.icon()],
+    }
+
+    filterOrder = None
+
+    # TODO 更改拟定数据
+    tags = [
+        "历史",
+        "数学",
+        "物理",
+    ]
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # 初始化UI
         self.setupUi(self)
         self.initUI()
+        self.initWidgets()
 
         # 初始化数据
         self.initLibrary()
 
+    def callBackSortOptions(self, index):
+        """
+        排序方式更改时的回调函数
+        """
+        self.sortOrder = index
+        self.sortSelector.setIcon(self.sortOrderOptions[self.sortOrder][1])
+        self.sortSelector.setText(self.sortOrderOptions[self.sortOrder][0])
+
+        self.initLibrary()
+
+    def callBackFilterOptions(self, tag):
+        """
+        筛选方式更改时的回调函数
+        """
+        self.filterOrder = tag
+        self.filterSelector.setText(tag)
+
+        self.initLibrary()
+
+    def callBackEnterKnowledge(self, item):
+        print(self.data[item.row()])
+
+    def initWidgets(self):
+        """初始化控件功能"""
+
+        # 设置下拉框控件
+        self.sortSelector.setIcon(FluentIcon.SCROLL.icon())
+        self.sortSelectorMenu = RoundMenu()
+        for a in self.sortOrderOptions.keys():
+            # 添加菜单项并绑定事件
+            action = QAction(self.sortOrderOptions[a][1], self.sortOrderOptions[a][0])
+            exec(f"action.triggered.connect(lambda :self.callBackSortOptions({a}))", locals(), locals())  # noqa
+
+            self.sortSelectorMenu.addAction(action)
+
+        self.sortSelector.setMenu(self.sortSelectorMenu)
+
+        # 筛选下拉框
+        self.filterSelector.setIcon(FluentIcon.FILTER.icon())
+        self.filterSelectorMenu = RoundMenu()
+
+        for tag in self.tags:
+            action = QAction(FluentIcon.TAG.icon(), tag)
+            exec(f"action.triggered.connect(lambda :self.callBackFilterOptions(\"{tag}\"))", locals(), locals())  # noqa
+
+            self.filterSelectorMenu.addAction(action)
+
+        self.filterSelector.setMenu(self.filterSelectorMenu)
+
     def initUI(self):
         """初始化UI"""
-
-        # 初始化表格
 
         # 设置表格边框
         self.knowledgeTable.setBorderVisible(True)
         self.knowledgeTable.setBorderRadius(8)
 
         # 设置表格布局
-        self.knowledgeTable.setRowCount(5)
         self.knowledgeTable.setColumnCount(4)
         self.knowledgeTable.setHorizontalHeaderLabels(["知识", "日期", "标签", "掌握"])
         self.knowledgeTable.verticalHeader().hide()
@@ -186,8 +266,37 @@ class PageLibrary(QWidget, library.Ui_PageLibrary):
         self.knowledgeTable.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.knowledgeTable.horizontalHeader().setMinimumSectionSize(200)
 
+        self.knowledgeTable.setEditTriggers(QAbstractItemView.NoEditTriggers)
+
+        # 设置表格点击回调
+        self.knowledgeTable.itemClicked.connect(self.callBackEnterKnowledge)
+
         # 顶层控件
         self.addKnowledge.setIcon(FluentIcon.ADD)
+
+    def sortByDate(self, reverse=False):
+        """
+        根据日期排序列表数据
+        """
+        self.data = sorted(self.data, key=lambda x: x[2], reverse=reverse)
+
+    def sortByName(self, reverse=False):
+        """
+        根据知识点名称排序列表数据
+        """
+        self.data = sorted(self.data, key=lambda x: ''.join(map(lambda c: str(ord(c)), x[1])), reverse=reverse)
+
+    def sortByMastery(self, reverse=False):
+        """
+        根据掌握程度排序列表数据
+        """
+        self.data = sorted(self.data, key=lambda x: x[-1], reverse=reverse)
+
+    def filterByTag(self):
+        """
+        根据标签筛选列表数据
+        """
+        self.data = list(filter(lambda x: x[3].find(self.filterOrder) != -1, self.data))
 
     def initLibrary(self):
         """初始化仓库信息"""
@@ -195,27 +304,54 @@ class PageLibrary(QWidget, library.Ui_PageLibrary):
         # 获取知识点数据
         self.data = kvkapi.getKnowledgeData()
 
+        # 筛选数据
+        self.filterByTag() if self.filterOrder is not None else None
+
+        # 排序数据
+        if self.sortOrder == 0x00 or self.sortOrder == 0x01:
+            self.sortByDate(self.sortOrder == 0x01)
+        elif self.sortOrder == 0x02 or self.sortOrder == 0x03:
+            self.sortByName(self.sortOrder == 0x03)
+        elif self.sortOrder == 0x04 or self.sortOrder == 0x05:
+            self.sortByMastery(self.sortOrder == 0x05)
+
+        self.knowledgeTable.setRowCount(len(self.data))
+        # 填充表格
         for r in range(len(self.data)):
             row = self.data[r]
-
+            # 设置第一列知识点名称
             self.knowledgeTable.setItem(r, 0, QTableWidgetItem(row[1]))
 
+            # 设置第二列知识点日期
             item = QTableWidgetItem(row[2])
             item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
             self.knowledgeTable.setItem(r, 1, item)
 
-            item = QTableWidgetItem(row[3])
-            item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
-            self.knowledgeTable.setItem(r, 2, item)
+            # 设置第三列知识点标签
+            itemWidget = QWidget()
+            itemWidget.setFixedHeight(50)
+            itemLayout = FlowLayout()
+            tags = row[3]
+            for tag in tags:
+                item = PillPushButton(tag, itemWidget, FluentIcon.TAG)
+                item.setCheckable(False)
+                item.setFixedHeight(30)
+                itemLayout.addWidget(item)
 
+            itemWidget.setLayout(itemLayout)
+            self.knowledgeTable.setCellWidget(r, 2, itemWidget)
+
+            # 设置第三列知识点掌握程度
             itemLayout = QVBoxLayout()
             itemLayout.setSpacing(0)
 
             item = QLabel(str(int(row[4] * 100)) + "%")
+            item.setStyleSheet("font-family: SIMHEI;font-size: 13px")
             item.setAlignment(Qt.AlignCenter)
             itemLayout.addWidget(item)
 
             item = ProgressBar(self)
+
             item.setMaximumWidth(160)
             item.setAlignment(Qt.AlignCenter)
             item.setValue(int(row[4] * 100))
