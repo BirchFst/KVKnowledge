@@ -11,18 +11,16 @@
 
 # 导入所需依赖
 import sys
-
-from PyQt5.QtGui import QColor, QLinearGradient
+from webbrowser import open as web_open
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QLabel, QStackedWidget, QHeaderView, QAction, QTableWidgetItem, QVBoxLayout, QHBoxLayout, \
     QWidget, QApplication, QAbstractItemView
-from PyQt5.QtCore import Qt
+import kvkapi
+from pages import library
 from qfluentwidgets import NavigationItemPosition, isDarkTheme, FluentIcon, NavigationBar, FluentTitleBar, ProgressBar, \
     setThemeColor, FlowLayout, PillPushButton, RoundMenu
 from qfluentwidgets.common.animation import BackgroundAnimationWidget
 from qfluentwidgets.components.widgets.frameless_window import FramelessWindow
-import kvkapi
-from pages import library
-from webbrowser import open as web_open
 
 
 class Widget(QWidget):
