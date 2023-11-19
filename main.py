@@ -8,17 +8,18 @@
 @Contact :   https://github.com/DrakHorse
 @License :   GNU GENERAL PUBLIC LICENSE
 """
-
-# 导入所需依赖
+import datetime
+import json
+import os.path
 import sys
 from webbrowser import open as web_open
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QLabel, QStackedWidget, QHeaderView, QAction, QTableWidgetItem, QVBoxLayout, QHBoxLayout, \
+from PyQt5.QtWidgets import QLabel, QHeaderView, QAction, QTableWidgetItem, QVBoxLayout, QHBoxLayout, \
     QWidget, QApplication, QAbstractItemView
 import kvkapi
-from pages import library
+from pages import library, knowledgePreview
 from qfluentwidgets import NavigationItemPosition, isDarkTheme, FluentIcon, NavigationBar, FluentTitleBar, ProgressBar, \
-    setThemeColor, FlowLayout, PillPushButton, RoundMenu
+    setThemeColor, FlowLayout, PillPushButton, RoundMenu, setTheme, Theme, PopUpAniStackedWidget, ElevatedCardWidget
 from qfluentwidgets.common.animation import BackgroundAnimationWidget
 from qfluentwidgets.components.widgets.frameless_window import FramelessWindow
 
@@ -82,7 +83,7 @@ class MainWindow(AcrylicWindow):
         # 初始化布局
         self.layout = QHBoxLayout(self)
         self.navigationBar = NavigationBar(self)
-        self.stackWidget = QStackedWidget(self)
+        self.stackWidget = PopUpAniStackedWidget(self)
 
         self.layout.addWidget(self.navigationBar)
         self.layout.addWidget(self.stackWidget)
@@ -92,8 +93,12 @@ class MainWindow(AcrylicWindow):
         self.layout.setSpacing(0)
         self.layout.setContentsMargins(0, 50, 0, 0)
 
-        self.stackWidget.setStyleSheet(
+        self.stackWidget.setStyleSheet(  # 设置亮色主题Qss
             "#stack{background: rgba(253,253,253,150);"
+            "border-top-left-radius: 8px;"
+            "border: 1px solid rgba(200,200,200,100)}") if not isDarkTheme() \
+            else self.stackWidget.setStyleSheet(  # 设置暗色主题Qss
+            "#stack{background: rgba(15,15,15,150);"
             "border-top-left-radius: 8px;"
             "border: 1px solid rgba(200,200,200,100)}")
         self.stackWidget.setObjectName("stack")
@@ -104,16 +109,19 @@ class MainWindow(AcrylicWindow):
         # 初始化侧边导航栏
         self.initNavigationBar()
 
+    def setCurrentPage(self, widget):
+        """设置当前页面"""
+        self.stackWidget.setCurrentWidget(widget)
+
     def initNavigationBar(self):
         """初始化侧边导航栏"""
-
         # 库按钮
         self.stackWidget.addWidget(self.pageLibrary)
         self.navigationBar.addItem(
             routeKey=self.pageLibrary.objectName(),
             icon=FluentIcon.IOT,
             text="仓库",
-            onClick=lambda: self.stackWidget.setCurrentWidget(self.pageLibrary),
+            onClick=lambda: self.setCurrentPage(self.pageLibrary),
             position=NavigationItemPosition.TOP,
         )
 
@@ -123,7 +131,7 @@ class MainWindow(AcrylicWindow):
             routeKey=self.pageAddFile.objectName(),
             icon=FluentIcon.ADD_TO,
             text="添加",
-            onClick=lambda: self.stackWidget.setCurrentWidget(self.pageAddFile),
+            onClick=lambda: self.setCurrentPage(self.pageAddFile),
             position=NavigationItemPosition.TOP,
         )
 
@@ -133,7 +141,7 @@ class MainWindow(AcrylicWindow):
             routeKey=self.pageReview.objectName(),
             icon=FluentIcon.SYNC,
             text="复习",
-            onClick=lambda: self.stackWidget.setCurrentWidget(self.pageReview),
+            onClick=lambda: self.setCurrentPage(self.pageReview),
             position=NavigationItemPosition.TOP,
         )
 
@@ -147,10 +155,13 @@ class MainWindow(AcrylicWindow):
             selectable=False,
         )
 
+        self.stackWidget.addWidget(self.pageKnowledgePreview)
+
         self.navigationBar.setCurrentItem(self.pageLibrary.objectName())
 
     def initPages(self):
         self.pageLibrary = PageLibrary(self.stackWidget)
+        self.pageKnowledgePreview = PageKnowledgePreview(self.stackWidget)
         self.pageAddFile = Widget("2", self.stackWidget)
         self.pageReview = Widget("3", self.stackWidget)
 
@@ -169,12 +180,12 @@ class PageLibrary(QWidget, library.Ui_PageLibrary):
 
     sortOrder = 0x00
     sortOrderOptions = {
-        0x00: ["创建日期", FluentIcon.DATE_TIME.icon()],
-        0x01: ["创建日期(倒序)", FluentIcon.DATE_TIME.icon()],
-        0x02: ["名称 A-Z", FluentIcon.TAG.icon()],
-        0x03: ["名称 Z-A", FluentIcon.TAG.icon()],
-        0x04: ["掌握程度", FluentIcon.MARKET.icon()],
-        0x05: ["掌握程度(倒叙)", FluentIcon.MARKET.icon()],
+        0x00: ["创建日期", FluentIcon.DATE_TIME.icon],
+        0x01: ["创建日期(倒序)", FluentIcon.DATE_TIME.icon],
+        0x02: ["名称 A-Z", FluentIcon.TAG.icon],
+        0x03: ["名称 Z-A", FluentIcon.TAG.icon],
+        0x04: ["掌握程度", FluentIcon.MARKET.icon],
+        0x05: ["掌握程度(倒叙)", FluentIcon.MARKET.icon],
     }
 
     filterOrder = None
@@ -201,7 +212,7 @@ class PageLibrary(QWidget, library.Ui_PageLibrary):
         排序方式更改时的回调函数
         """
         self.sortOrder = index
-        self.sortSelector.setIcon(self.sortOrderOptions[self.sortOrder][1])
+        self.sortSelector.setIcon(self.sortOrderOptions[self.sortOrder][1]())
         self.sortSelector.setText(self.sortOrderOptions[self.sortOrder][0])
 
         self.initLibrary()
@@ -216,7 +227,8 @@ class PageLibrary(QWidget, library.Ui_PageLibrary):
         self.initLibrary()
 
     def callBackEnterKnowledge(self, item):
-        print(self.data[item.row()])
+        self.parent().parent().stackWidget.setCurrentWidget(self.parent().parent().pageKnowledgePreview)  # noqa
+        self.parent().parent().pageKnowledgePreview.initData(self.data[item.row()])  # noqa
 
     def initWidgets(self):
         """初始化控件功能"""
@@ -226,7 +238,7 @@ class PageLibrary(QWidget, library.Ui_PageLibrary):
         self.sortSelectorMenu = RoundMenu()
         for a in self.sortOrderOptions.keys():
             # 添加菜单项并绑定事件
-            action = QAction(self.sortOrderOptions[a][1], self.sortOrderOptions[a][0])
+            action = QAction(self.sortOrderOptions[a][1](), self.sortOrderOptions[a][0])
             exec(f"action.triggered.connect(lambda :self.callBackSortOptions({a}))", locals(), locals())  # noqa
 
             self.sortSelectorMenu.addAction(action)
@@ -294,7 +306,7 @@ class PageLibrary(QWidget, library.Ui_PageLibrary):
         """
         根据标签筛选列表数据
         """
-        self.data = list(filter(lambda x: x[3].find(self.filterOrder) != -1, self.data))
+        self.data = list(filter(lambda x: self.filterOrder in x[3], self.data))
 
     def initLibrary(self):
         """初始化仓库信息"""
@@ -341,17 +353,20 @@ class PageLibrary(QWidget, library.Ui_PageLibrary):
 
             # 设置第三列知识点掌握程度
             itemLayout = QVBoxLayout()
-            itemLayout.setSpacing(0)
+            itemLayout.setSpacing(5)
+            itemLayout.setContentsMargins(18, 18, 18, 18)
 
             item = QLabel(str(int(row[4] * 100)) + "%")
-            item.setStyleSheet("font-family: SIMHEI;font-size: 13px")
-            item.setAlignment(Qt.AlignCenter)
+            item.setStyleSheet("font-family: SIMHEI;font-size: 13px;color: black;") if not isDarkTheme() \
+                else item.setStyleSheet("font-family: SIMHEI;font-size: 13px;color: white;")
+            item.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
             itemLayout.addWidget(item)
 
             item = ProgressBar(self)
 
             item.setMaximumWidth(160)
-            item.setAlignment(Qt.AlignCenter)
+            item.setFixedHeight(5)
+            item.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
             item.setValue(int(row[4] * 100))
             itemLayout.addWidget(item)
 
@@ -361,15 +376,56 @@ class PageLibrary(QWidget, library.Ui_PageLibrary):
             self.knowledgeTable.setCellWidget(r, 3, itemWidget)
 
 
+class PageKnowledgePreview(QWidget, knowledgePreview.Ui_PageKnowledgePreview):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setupUi(self)
+        self.initUI()
+
+    def initUI(self):
+        """初始化UI"""
+        self.visibleToggleButton.setIcon(FluentIcon.HIDE)
+
+    def initData(self, data):
+        """初始化数据"""
+        self.jsonData = json.loads(open(os.path.join('.\\knowledge\\', data[0]), "r", encoding="utf-8").read())
+        kv_points_length = 0
+        for i in self.jsonData["knowledge_points"]:
+            kv_points_length += 1 if i["type"] == "kv" else None
+
+        self.knowledgeTitle.setText(data[1])
+        self.masteryRing.setValue(int(data[4] * 100))
+        self.knowledgeInfoTitle.setText(
+            f"{kv_points_length}个知识块   上次复习{self.format_time(self.jsonData['last_review_time'])}")
+
+        self.mainWidget.reinitData(self.jsonData)
+
+    @staticmethod
+    def format_time(timestamp):
+        now = datetime.datetime.now()
+        target = datetime.datetime.fromtimestamp(timestamp)
+        diff = now - target
+
+        if diff.days < 7:
+            return f"{diff.days}天前"
+        elif diff.days < 21:
+            return f"{diff.days // 7}周前"
+        else:
+            return target.strftime("%d/%m/%y")
+
+
+
+
 # 运行
 if __name__ == '__main__':
     # 设置主题颜色
     setThemeColor("#0078D4")
+    setTheme(Theme.AUTO)
 
     # 适应Dpi
     setHighDpi()
 
-    # 实例化运行
+    # 实例化运行d
     app = QApplication(sys.argv)
     mainwindow = MainWindow()
     mainwindow.show()
