@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import QWidget, QLabel, QVBoxLayout, QSizePolicy, QFrame, Q
     QSpacerItem
 from PyQt5.QtCore import QSize
 
-from qfluentwidgets import ElevatedCardWidget, FlowLayout
+from qfluentwidgets import ElevatedCardWidget, FlowLayout, StrongBodyLabel
 
 from PyQt5.QtWidgets import QLayout, QLayoutItem, QWidget
 
@@ -21,8 +21,17 @@ class KnowledgeCard(ElevatedCardWidget):
         """初始化UI"""
         self.setMaximumWidth(260)
 
-    def setText(self):
-        pass
+        # 初始化布局
+        self.layout = QVBoxLayout(self)
+        self.setLayout(self.layout)
+
+        # 初始化控件
+        self.textLabel = StrongBodyLabel(self)
+        self.textLabel.setAlignment(Qt.AlignCenter)
+        self.layout.addWidget(self.textLabel)
+
+    def setData(self, data):
+        self.textLabel.setText(data["key"])
 
 
 class KnowledgeView(QWidget):
@@ -84,6 +93,7 @@ class KnowledgeView(QWidget):
             for card in range(no_cards * line, (no_cards - 1) * (line + 1) + 1):
                 c = KnowledgeCard(self.lines[line]) if no_cards * line + card <= no_lines * no_lines else QWidget(
                     self.lines[line])
+                c.setData(self.data["knowledge_points"][no_cards * line + card]) if isinstance(c, KnowledgeCard) else None
                 self.lines[line].layout().addWidget(c)
 
         null_widget = QWidget(self)
