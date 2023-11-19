@@ -15,7 +15,7 @@ import sys
 from webbrowser import open as web_open
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QLabel, QHeaderView, QAction, QTableWidgetItem, QVBoxLayout, QHBoxLayout, \
-    QWidget, QApplication, QAbstractItemView
+    QWidget, QApplication, QAbstractItemView, QGraphicsDropShadowEffect
 import kvkapi
 from pages import library, knowledgePreview
 from qfluentwidgets import NavigationItemPosition, isDarkTheme, FluentIcon, NavigationBar, FluentTitleBar, ProgressBar, \
@@ -386,6 +386,9 @@ class PageKnowledgePreview(QWidget, knowledgePreview.Ui_PageKnowledgePreview):
         """初始化UI"""
         self.visibleToggleButton.setIcon(FluentIcon.HIDE)
 
+        self.SingleDirectionScrollArea.smoothScroll.orient = Qt.Horizontal
+        self.SingleDirectionScrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
     def initData(self, data):
         """初始化数据"""
         self.jsonData = json.loads(open(os.path.join('.\\knowledge\\', data[0]), "r", encoding="utf-8").read())
@@ -412,8 +415,6 @@ class PageKnowledgePreview(QWidget, knowledgePreview.Ui_PageKnowledgePreview):
             return f"{diff.days // 7}周前"
         else:
             return target.strftime("%d/%m/%y")
-
-
 
 
 # 运行
