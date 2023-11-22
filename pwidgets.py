@@ -1,7 +1,9 @@
 import sys
+
+from PyQt5.QtGui import QPalette, QColor
 from PyQt5.QtWidgets import QVBoxLayout, QApplication, QHBoxLayout
-from PyQt5.QtCore import pyqtProperty, QPropertyAnimation
-from qfluentwidgets import ElevatedCardWidget, StrongBodyLabel, BodyLabel
+from PyQt5.QtCore import pyqtProperty, QPropertyAnimation, QSize
+from qfluentwidgets import ElevatedCardWidget, StrongBodyLabel, BodyLabel, LineEdit, TextEdit, CardWidget, isDarkTheme
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QWidget
 
@@ -32,7 +34,8 @@ class KnowledgeCard(ElevatedCardWidget):
         self.layout.addWidget(self.keyLabel)
 
         self.valueLabel = BodyLabel(self)
-        self.valueLabel.setStyleSheet("color: rgba(0,0,0,0)")
+        self.valueLabel.setStyleSheet("color: rgba(0,0,0,0);") if isDarkTheme() else self.valueLabel.setStyleSheet(
+            "color: rgba(255,255,255,0);")
         self.valueLabel.setWordWrap(True)
         self.valueLabel.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.valueLabel)
@@ -65,7 +68,10 @@ class KnowledgeCard(ElevatedCardWidget):
             self.animation.start()
 
     def setValueOpacity(self, value):
-        self.valueLabel.setStyleSheet(f"color: rgba(0,0,0,{value})")
+        if isDarkTheme():
+            self.valueLabel.setStyleSheet(f"color: rgba(255,255,255,{value})")
+        else:
+            self.valueLabel.setStyleSheet(f"color: rgba(0, 0, 0,{value})")
 
     valueOpacity = pyqtProperty(int, fget=lambda self: self.colorValueOpacity, fset=setValueOpacity)
 
@@ -119,6 +125,165 @@ class KnowledgeView(QWidget):
         # 创建各行布局并初始化
         for line in range(no_lines):
             self.lines.append(QWidget(self))
+
+            self.rootLayout.addWidget(self.lines[line])
+            self.lines[line].setLayout(QVBoxLayout(self.lines[line]))
+            self.lines[line].setFixedWidth(250)
+
+            self.lines[line].layout().setSpacing(5)
+            self.lines[line].layout().setContentsMargins(0, 0, 0, 0)
+
+            # 添加卡片
+            for card in range(no_cards * line, no_cards * line + no_cards):
+                if card < len(self.data["knowledge_points"]):
+                    c = KnowledgeCard(self.lines[line])
+                    c.setData(self.data["knowledge_points"][card])
+                    self.lines[line].layout().addWidget(c)
+
+
+class EditKeyFrame(LineEdit):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if isDarkTheme():
+            palette = QPalette()
+            palette.setColor(QPalette.Text, QColor(255, 255, 255))
+
+            self.setPalette(palette)
+        else:
+            palette = QPalette()
+            palette.setColor(QPalette.Text, QColor(0, 0, 0))
+
+            self.setPalette(palette)
+
+    def focusOutEvent(self, e):
+        """失焦回调"""
+        self.parent().saveCardData()
+
+
+class EditValueFrame(TextEdit):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if isDarkTheme():
+            palette = QPalette()
+            palette.setColor(QPalette.Text, QColor(255, 255, 255))
+
+            self.setPalette(palette)
+        else:
+            palette = QPalette()
+            palette.setColor(QPalette.Text, QColor(0, 0, 0))
+
+            self.setPalette(palette)
+
+    def focusOutEvent(self, e):
+        """失焦回调"""
+        try:
+            self.parent().saveCardData()
+        except AttributeError:
+            return
+
+
+class KnowledgeEditCard(CardWidget):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.initUI()
+
+        self.colorValueOpacity = 0
+
+    def initUI(self):
+        """初始化UI"""
+        # 设置失焦回调
+        self.setMaximumHeight(260)
+
+        # 初始化布局
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(20, 20, 20, 20)
+
+        self.setLayout(self.layout)
+
+        # 初始化控件
+        self.keyFrame = EditKeyFrame(self)
+        self.keyFrame.setStyleSheet("background: rgba(0,0,0,0);border: 0;font-weight: bold;font-size: 16px")
+        self.keyFrame.setAlignment(Qt.AlignCenter)
+
+        self.layout.addWidget(self.keyFrame)
+
+        self.valueFrame = EditValueFrame(self)
+        self.valueFrame.setPlaceholderText("单击编辑知识内容")
+        self.valueFrame.setStyleSheet("background: rgba(0,0,0,0);border: 0;font-size: 14px")
+        self.valueFrame.setAlignment(Qt.AlignCenter)
+        self.layout.addWidget(self.valueFrame)
+
+    def saveCardData(self):
+        """变更卡片数据"""
+        self.parent().parent().updateDataFromChildren()  # noqa
+
+    def setData(self, data):
+        """设置卡片数据"""
+        self.keyFrame.setText(data["key"])
+        self.valueFrame.setText(data["value"])
+
+    def setIndex(self, index):
+        """设置在全局中的索引"""
+        self.index = index
+
+
+class KnowledgeEditPad(QWidget):
+    data = None
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.initUI()
+
+    def initUI(self):
+        """初始化UI"""
+        # 设置根布局
+        self.rootLayout = QHBoxLayout()
+        self.rootLayout.setSpacing(10)
+        self.lines = []
+
+        self.setLayout(self.rootLayout)
+
+    def reinitData(self, data):
+        self.data = data
+        self.reinitLayout()
+
+    def addData(self, data):
+        self.updateDataFromParent(data)
+
+    def updateDataFromParent(self, data):
+        self.data = data
+        self.reinitLayout()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+
+        if self.data:
+            self.reinitLayout(event.oldSize(), event.size())
+
+    def reinitLayout(self, old=None, new=None):
+        """重初始化卡片"""
+
+        # 若长宽变化幅度不大则不重新布局
+        if old and new and new.height() // 250 == old.height() // 250:
+            return None
+
+        # 删除所有行
+        while self.rootLayout.count():
+            item = self.rootLayout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        self.lines = []
+
+        # 计算每行的卡片数
+        self.no_cards = self.height() // 250
+        self.no_lines = len(self.data["knowledge_points"]) / self.no_cards
+        self.no_lines = int(self.no_lines) if self.no_lines == int(self.no_lines) else int(self.no_lines) + 1  # 向上整取
+
+        # 创建各行布局并初始化
+        for line in range(self.no_lines):
+            self.lines.append(QWidget(self))
             self.rootLayout.addWidget(self.lines[line])
             self.lines[line].setLayout(QVBoxLayout(self.lines[line]))
             self.lines[line].setFixedWidth(250)
@@ -127,12 +292,28 @@ class KnowledgeView(QWidget):
             self.lines[line].layout().setSpacing(5)
 
             # 添加卡片
-            for card in range(no_cards * line, no_cards * line + no_cards):
-                c = KnowledgeCard(self.lines[line]) if card < len(self.data["knowledge_points"]) else QWidget(
-                    self.lines[line])
+            for card in range(self.no_cards * line, self.no_cards * line + self.no_cards):
+                if card < len(self.data["knowledge_points"]):
+                    c = KnowledgeEditCard(self.lines[line])
 
-                c.setData(self.data["knowledge_points"][card]) if isinstance(c, KnowledgeCard) else None
-                self.lines[line].layout().addWidget(c)
+                    c.setData(self.data["knowledge_points"][card])
+                    c.setIndex(card)
+                    self.lines[line].layout().addWidget(c)
+
+    def updateDataFromChildren(self):
+        """更新数据并传回父类"""
+        self.data["knowledge_points"] = []
+        for line in self.lines:
+            for card in line.children():
+                if isinstance(card, KnowledgeEditCard):
+                    self.data["knowledge_points"].append({
+                        "type": "kv",
+                        "key": card.keyFrame.text(),
+                        "value": card.valueFrame.toPlainText()
+                    })
+
+        self.parent().parent().data = self.data
+        self.reinitLayout()
 
 
 if __name__ == '__main__':

@@ -27,9 +27,11 @@ from time import mktime
 SD_APP_ID = "your_app_id"
 SD_API_SECRET = "your_api_secret"
 SD_API_KEY = "your_api_key"
+DEBUG_MODE = False
 exec(open(".\\ApiData").read(), globals(), globals())
 
 sd_answer = ""
+
 
 class WsParam:
     def __init__(self, APPID, APIKey, APISecret, Spark_url):
@@ -129,13 +131,20 @@ def sd_request(appid, api_key, api_secret, Spark_url, domain, question):
 
 def sd_correct(question: str, correct_answer: str, students_answer: str):
     global SD_APP_ID, SD_API_KEY, SD_API_SECRET, sd_answer
+
+    if DEBUG_MODE:
+        return """
+        {"result": true,"describe": "DEBUG MODE ENABLED"}"""
+
     question = [{
         "role": "user",
         "content": "I need you to help me grade my homework. I will provide you with a JSON format assignment that "
                    "includes questions, correct answers, and student answers\n"
                    "You only need to return JSON data, which contains' result ': correct or incorrect as a Boolean"
                    "value, and can contain a parsing description in string form' describe ',If the problem is in "
-                   "Chinese, you can also explain it in Chinese"
+                   "Chinese, you can also explain it in Chinese,"
+                   "Note: The answers to most questions (especially subjective questions) do not need to be word for "
+                   "word"
                    "{\n"
                    f"question: \"{question}\",\n"
                    f"correct_answer: \"{correct_answer}\",\n"
@@ -167,10 +176,10 @@ def getKnowledgeData():
     return knowledge_lst
 
 
-def sayText(text, rate=100):
+def textToSpeech(text, path, rate=200):
     engine = pyttsx3.init()  # 初始化语音引擎
     engine.setProperty('rate', rate)  # 设置语速
     engine.setProperty('voice', engine.getProperty('voices')[0].id)
 
-    engine.say(text)  # pyttsx3->将结果念出来
-    engine.runAndWait()  # 运行配置
+    engine.save_to_file(text, path)
+    engine.runAndWait()

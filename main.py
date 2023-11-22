@@ -12,14 +12,18 @@ import datetime
 import json
 import os.path
 import sys
+import threading
+import time
 from webbrowser import open as web_open
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QLabel, QHeaderView, QAction, QTableWidgetItem, QVBoxLayout, QHBoxLayout, \
-    QWidget, QApplication, QAbstractItemView, QGraphicsDropShadowEffect
+from PyQt5.QtCore import Qt, QLocale
+from PyQt5.QtWidgets import (QLabel, QHeaderView, QAction, QTableWidgetItem, QVBoxLayout, QHBoxLayout,
+                             QWidget, QApplication, QAbstractItemView, QFileDialog)
 import kvkapi
-from pages import library, knowledgePreview
-from qfluentwidgets import NavigationItemPosition, isDarkTheme, FluentIcon, NavigationBar, FluentTitleBar, ProgressBar, \
-    setThemeColor, FlowLayout, PillPushButton, RoundMenu, setTheme, Theme, PopUpAniStackedWidget, ElevatedCardWidget
+from pages import library, knowledgePreview, edit, exam, examReport
+from qfluentwidgets import (NavigationItemPosition, isDarkTheme, FluentIcon, NavigationBar, FluentTitleBar, ProgressBar,
+                            setThemeColor, FlowLayout, PillPushButton, RoundMenu, setTheme, Theme,
+                            PopUpAniStackedWidget, Action, InfoBar, InfoBarPosition, MessageBox, FluentTranslator,
+                            MessageBoxBase, SubtitleLabel)
 from qfluentwidgets.common.animation import BackgroundAnimationWidget
 from qfluentwidgets.components.widgets.frameless_window import FramelessWindow
 
@@ -64,6 +68,7 @@ class AcrylicWindow(BackgroundAnimationWidget, FramelessWindow):
 
 class MainWindow(AcrylicWindow):
     """Qt窗口主类"""
+    lock = False
 
     def __init__(self):
         super().__init__()
@@ -111,7 +116,20 @@ class MainWindow(AcrylicWindow):
 
     def setCurrentPage(self, widget):
         """设置当前页面"""
-        self.stackWidget.setCurrentWidget(widget)
+        if not self.lock:
+            self.stackWidget.setCurrentWidget(widget)
+            widget.reinit()
+        else:
+            self.navigationBar.setCurrentItem(self.pageLibrary.objectName())
+            InfoBar.error(
+                title='禁止切出',
+                content="测试完毕后即可切换页面",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
 
     def initNavigationBar(self):
         """初始化侧边导航栏"""
@@ -135,16 +153,6 @@ class MainWindow(AcrylicWindow):
             position=NavigationItemPosition.TOP,
         )
 
-        # 复习
-        self.stackWidget.addWidget(self.pageReview)
-        self.navigationBar.addItem(
-            routeKey=self.pageReview.objectName(),
-            icon=FluentIcon.SYNC,
-            text="复习",
-            onClick=lambda: self.setCurrentPage(self.pageReview),
-            position=NavigationItemPosition.TOP,
-        )
-
         # 关于
         self.navigationBar.addItem(
             routeKey="About",
@@ -156,23 +164,17 @@ class MainWindow(AcrylicWindow):
         )
 
         self.stackWidget.addWidget(self.pageKnowledgePreview)
+        self.stackWidget.addWidget(self.pageExam)
+        self.stackWidget.addWidget(self.pageExamReport)
 
         self.navigationBar.setCurrentItem(self.pageLibrary.objectName())
 
     def initPages(self):
         self.pageLibrary = PageLibrary(self.stackWidget)
         self.pageKnowledgePreview = PageKnowledgePreview(self.stackWidget)
-        self.pageAddFile = Widget("2", self.stackWidget)
-        self.pageReview = Widget("3", self.stackWidget)
-
-
-def setHighDpi():
-    """自适应高Dpi缩放"""
-    QApplication.setHighDpiScaleFactorRoundingPolicy(
-        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
-    )
-    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
-    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
+        self.pageAddFile = PageEdit(self.stackWidget)
+        self.pageExam = PageExam(self.stackWidget)
+        self.pageExamReport = PageExamReport(self.stackWidget)
 
 
 class PageLibrary(QWidget, library.Ui_PageLibrary):
@@ -375,6 +377,15 @@ class PageLibrary(QWidget, library.Ui_PageLibrary):
 
             self.knowledgeTable.setCellWidget(r, 3, itemWidget)
 
+    def reinit(self):
+        self.initLibrary()
+
+        # 刷新2次保证界面不错乱(某种玄学Bug导致)
+        self.parent().setCurrentIndex(1)
+        self.parent().setCurrentIndex(0)
+        self.parent().setCurrentIndex(1)
+        self.parent().setCurrentIndex(0)
+
 
 class PageKnowledgePreview(QWidget, knowledgePreview.Ui_PageKnowledgePreview):
     def __init__(self, *args, **kwargs):
@@ -387,7 +398,19 @@ class PageKnowledgePreview(QWidget, knowledgePreview.Ui_PageKnowledgePreview):
         self.visibleToggleButton.setIcon(FluentIcon.HIDE)
 
         self.SingleDirectionScrollArea.smoothScroll.orient = Qt.Horizontal
-        self.SingleDirectionScrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        # 绑定按钮事件
+        self.listenButton.clicked.connect(self.TTSOutput)
+        self.examButton.clicked.connect(lambda: self.parent().parent().setCurrentPage(self.parent().parent().pageExam))
+
+    def TTSOutput(self):
+        """TTS: 导出音频"""
+        path = QFileDialog.getSaveFileName(self, "选择音频保存的路径", self.knowledgeTitle.text(), "MP3音频(*.mp3)")
+        kvkapi.textToSpeech(
+            "知识点," + self.jsonData["name"] + "。" + ";".join(
+                [i["key"] + ": " + i["value"] for i in self.jsonData["knowledge_points"]]),
+            path[0],
+        )
 
     def initData(self, data):
         """初始化数据"""
@@ -417,7 +440,406 @@ class PageKnowledgePreview(QWidget, knowledgePreview.Ui_PageKnowledgePreview):
             return target.strftime("%d/%m/%y")
 
 
-# 运行
+class PageEdit(QWidget, edit.Ui_PageEdit):
+    # 初始化数据
+    data = {
+        "name": "新的专题",
+        "tags": [],
+        "created_time": time.time(),
+        "last_review_time": time.time(),
+        "mastery_level": 0.0,
+        "knowledge_points": []
+    }
+
+    saved = False
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setupUi(self)
+        self.initUI()
+
+    def reinit(self):
+        """重初始化"""
+        if self.saved:
+            self.knowledgeTitle.setText("新的专题")
+            self.data = {
+                "name": "新的专题",
+                "tags": [],
+                "created_time": time.time(),
+                "last_review_time": time.time(),
+                "mastery_level": 0.0,
+                "knowledge_points": []
+            }
+
+            self.saved = False
+            self.mainWidget.updateDataFromParent(self.data)
+            self.mainWidget.reinitLayout()
+
+    def saveTitleData(self):
+        """保存标题数据"""
+        self.data["name"] = self.knowledgeTitle.text()
+        self.saved = False
+
+    def initUI(self):
+        """初始化UI"""
+        self.knowledgeTitle.setText("新的专题")
+        self.knowledgeTitle.editingFinished.connect(self.saveTitleData)
+
+        # 初始化工具栏
+        self.commandBar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+
+        # 添加工具栏工具项
+        self.commandBar.addAction(Action(FluentIcon.ADD_TO, "添加块", triggered=self.addBlock))
+        self.commandBar.addAction(Action(FluentIcon.UP, "向前放置", triggered=lambda: self.moveBlock(True)))
+        self.commandBar.addAction(Action(FluentIcon.DOWN, "向后放置", triggered=lambda: self.moveBlock(False)))
+        self.commandBar.addAction(Action(FluentIcon.DELETE, "删除块", triggered=self.deleteBlock))
+        self.commandBar.addAction(Action(FluentIcon.SAVE, "保存", triggered=self.saveData))
+        self.commandBar.addAction(Action(FluentIcon.TAG, "标签", triggered=self.setTags))
+        self.commandBar.addAction(Action(FluentIcon.ADD, "新建知识页", triggered=self.newData))
+
+        # 绑定滚轮横向移动
+        self.SingleDirectionScrollArea.smoothScroll.orient = Qt.Horizontal
+
+        # 设置QSS
+        self.knowledgeTitle.setStyleSheet(
+            "background: rgba(0,0,0,0);border: 0;font-size: 29px;color: #FFFFFF") if isDarkTheme() else self.knowledgeTitle.setStyleSheet(
+            "background: rgba(0,0,0,0);border: 0;font-size: 29px;color: #000000")
+        self.saved = False
+
+    def moveBlock(self, forward: True):
+        """移动数据块将其调换顺序"""
+        self.saved = False
+
+        try:
+            # 尝试获取行和列
+            index = self.focusWidget().parent().index
+
+            # 选中卡片保存内容
+            w = self.focusWidget()
+            w.parent().saveCardData()
+
+            # 禁止首项前移或尾项后移
+            if not index and forward or index == len(self.data["knowledge_points"]) - 1 and not forward:
+                return
+
+            # 交换数据顺序
+            if forward:
+                self.data["knowledge_points"][index], self.data["knowledge_points"][index - 1] = \
+                    self.data["knowledge_points"][index - 1], self.data["knowledge_points"][index]
+            else:
+                self.data["knowledge_points"][index], self.data["knowledge_points"][index + 1] = \
+                    self.data["knowledge_points"][index + 1], self.data["knowledge_points"][index]
+
+            self.mainWidget.updateDataFromParent(self.data)
+
+        except AttributeError:
+            pass
+
+    def deleteBlock(self):
+        """删除选中的数据块"""
+        self.saved = False
+
+        try:
+            # 尝试获取行和列
+            index = self.focusWidget().parent().index
+
+            # 删除并更新数据
+            del self.data["knowledge_points"][index]
+            self.mainWidget.updateDataFromParent(self.data)
+
+        except AttributeError:
+            pass
+
+    def addBlock(self):
+        """添加块"""
+        self.saved = False
+
+        try:
+            self.focusWidget().parent().saveCardData()
+        except AttributeError:
+            pass
+
+        # 更新数据
+        self.data["knowledge_points"].append({
+            "type": "kv",
+            "key": "关键线索",
+            "value": "",
+        })
+
+        # 更新UI
+        self.mainWidget.addData(self.data)
+
+    def saveData(self):
+        """保存数据"""
+
+        # 保存当前知识块数据
+        try:
+            self.focusWidget().parent().saveCardData()
+        except AttributeError:
+            pass
+
+        # 打开文件
+        with open(f".\\knowledge\\{self.data['created_time']}.kvk", "w", encoding="utf-8") as file:
+            file.write(json.dumps(self.data))
+            file.close()
+
+        self.saved = True
+
+        # 显示保存成功消息
+        InfoBar.success(
+            title='保存成功',
+            content="切换页面后将退出本知识页编辑器，可在仓库中找到该知识页以修改",
+            orient=Qt.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=2000,
+            parent=self
+        )
+
+    def newData(self):
+        """新建知识页"""
+        if not self.saved:
+            if MessageBox("当前知识页未保存", "新建将丢弃当前未保存的知识页，确定操作吗", self).exec():
+                self.saved = True
+                self.reinit()
+                InfoBar.success(
+                    title='新建完成',
+                    content="未保存的知识页已被清除",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+            else:
+                return
+        else:
+            self.saved = True
+            self.reinit()
+            InfoBar.success(
+                title='新建完成',
+                content="原数据已保存至仓库",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
+
+    def setTags(self):
+        """设置标签"""
+        w = PageEditSetTagsBox(self, self.data["tags"])
+        e = w.exec_()
+        print(e)
+        if e is not None:
+            self.data["tags"] = e
+        print(self.data["tags"])
+
+
+class PageEditSetTagsBox(MessageBoxBase):
+    """ Custom message box """
+    data = []
+    tags = ["语文", "数学", "英语", "物理", "地理", "生物", "政治", "历史", "Python"]
+
+    def __init__(self, parent, data):
+        super().__init__(parent)
+
+        # 设置数据
+        self.data = data.copy()
+
+        # 初始化控件
+
+        self.titleLabel = SubtitleLabel('在下方选中标签', self)
+
+        self.flowWidget = QWidget(self)
+        self.flowLayout = FlowLayout(self.flowWidget)
+
+        # 在布局中添加控件
+        self.viewLayout.addWidget(self.titleLabel)
+        self.viewLayout.addWidget(self.flowWidget)
+
+        for tag in self.tags:
+            tagButton = PillPushButton(self.flowWidget)
+            tagButton.setText(tag)
+            tagButton.setChecked(True) if tag in self.data else None
+
+            exec(f"tagButton.clicked.connect(lambda: self.clickedEvent('{tag}'))", locals(), locals())
+            self.flowLayout.addWidget(tagButton)
+
+        self.yesButton.setText("确定")
+        self.cancelButton.setText("取消")
+
+        self.widget.setMinimumWidth(350)
+
+    def clickedEvent(self, text):
+        """选中标签事件"""
+        self.data.remove(text) if text in self.data else self.data.append(text)
+
+    def exec_(self):
+        if super().exec_():
+            return self.data
+
+
+class PageExam(QWidget, exam.Ui_PageExam):
+    answerEditFrameMaxHeight = 500
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setupUi(self)
+        self.initUI()
+
+    def initUI(self):
+        """初始化UI"""
+        self.answerEdit.setMaximumHeight(100)
+        self.answerEdit.textChanged.connect(self.updateAnswerEditFrameHeight)
+
+        self.enterButton.clicked.connect(self.callBackEnterButton)
+
+    def startExam(self):
+        """开始测试"""
+        # 锁定页面
+        self.parent().parent().lock = True
+
+        # 获取数据
+        self.data = self.parent().parent().pageKnowledgePreview.jsonData
+
+        # 获取数据中信息
+        self.no_question = len(self.data["knowledge_points"]) - 1  # 总题数
+        self.current_question = 0  # 当前题数
+        self.current_step = 0  # 当前步骤
+
+        self.titleLabel.setText(self.data["name"])
+
+        # 设置数据
+        self.report = dict(
+            start_time=time.time(),
+            no_wrong=0,
+            wrong_questions=[],
+            no_all=len(self.data["knowledge_points"])
+        )
+
+        # 测试
+        self.toExam(self.data["knowledge_points"][self.current_question])
+
+    def toExam(self, question):
+        """测试某题"""
+
+        self.current_step = 0
+
+        self.progressLabel.setText(f"进度 {self.current_question + 1}/{self.no_question + 1}")
+        self.progressBar.setValue(int((self.current_question + 1) / (self.no_question + 1) * 100))
+        self.answerEdit.clear()
+
+        self.questionLabel.setText(question["key"])
+
+    def finish(self):
+        """完成测试"""
+        # 解锁页面
+        self.parent().parent().lock = False
+
+        # 修改数据
+        self.report["end_time"] = time.time()
+
+        # 重新设置UI
+        self.parent().parent().setCurrentPage(self.parent().parent().pageExamReport)
+        self.parent().parent().pageExamReport.initData(self.report)
+
+    def callBackEnterButton(self):
+        """提交按钮回调"""
+        if not self.current_step:
+            # 步骤为0时按钮为批改
+            self.progressLabel.setText("AI 批改中...")
+            threading.Thread(target=self.correcting).start()
+        else:
+            # 检测测试进程完毕
+            if self.current_question == self.no_question:
+                self.finish()
+                return
+
+            # 按钮为下一题
+            self.current_question += 1
+
+            # 重新设置UI
+            self.progressLabel.setStyleSheet("color: #FFFFFF") if isDarkTheme() else self.progressLabel.setStyleSheet(
+                "color: #000000")
+            self.enterButton.setText("提交")
+
+            self.toExam(self.data["knowledge_points"][self.current_question])
+
+    def correcting(self):
+        try:
+            # 获取数据
+            c_json = json.loads(kvkapi.sd_correct(self.data['knowledge_points'][self.current_question]['key'],
+                                                  self.data['knowledge_points'][self.current_question]['value'],
+                                                  self.answerEdit.toPlainText()))
+
+            c = "正确" if c_json["result"] else "错误"
+
+            # 记录错误题目
+            self.report["no_wrong"] += 1 if not c_json["result"] else self.report["no_wrong"]
+            self.report["wrong_questions"].append(self.current_question) if not c_json["result"] else None
+
+            # 更新UI显示数据
+            self.progressLabel.setStyleSheet("color: green") if c_json["result"] else self.progressLabel.setStyleSheet(
+                "color: red")
+            self.progressLabel.setText(f"正确答案: {self.data['knowledge_points'][self.current_question]['value']}\n"
+                                       f"AI 批改: {c} \n"
+                                       f"AI 见解: {c_json['describe']}")
+        except json.decoder.JSONDecodeError:
+            self.progressLabel.setText(f"正确答案: {self.data['knowledge_points'][self.current_question]['value']}\n"
+                                       f"AI 批改失败， 请自行批阅")
+
+        self.enterButton.setText("继续测试")
+        self.current_step = 1
+
+        return
+
+    def updateAnswerEditFrameHeight(self):
+        """更新回答框的高度"""
+        if self.answerEditFrameMaxHeight > self.answerEdit.document().size().height() > 100:
+            self.answerEdit.setMaximumHeight(int(self.answerEdit.document().size().height()))
+        elif self.answerEditFrameMaxHeight < self.answerEdit.document().size().height():
+            self.answerEdit.setMaximumHeight(self.answerEditFrameMaxHeight)
+        else:
+            self.answerEdit.setMaximumHeight(100)
+
+    def reinit(self):
+        # 开始测试
+        self.startExam()
+
+
+class PageExamReport(QWidget, examReport.Ui_PageExamReport):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setupUi(self)
+        self.initUI()
+
+    def initUI(self):
+        """初始化UI"""
+
+    def reinit(self):
+        """重初始化"""
+
+    def initData(self, data):
+        """初始化数据并展示"""
+        self.nOKnoeledgeLabel.setText(str(data["no_all"]))
+        self.timeLabel.setText(f'{int(data["end_time"] - data["start_time"])} 秒')
+        self.missingLabel.setText(f'{data["no_wrong"]} 个块')
+
+        self.progressRing.setValue(int((data["no_all"] - data["no_wrong"]) / data["no_all"] * 100))
+        self.returnButton.clicked.connect(
+            lambda: self.parent().parent().setCurrentPage(self.parent().parent().pageLibrary))
+
+
+def setHighDpi():
+    """自适应高Dpi缩放"""
+    QApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+    )
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
+
+
 if __name__ == '__main__':
     # 设置主题颜色
     setThemeColor("#0078D4")
@@ -426,8 +848,15 @@ if __name__ == '__main__':
     # 适应Dpi
     setHighDpi()
 
-    # 实例化运行d
+    # 实例化
     app = QApplication(sys.argv)
+
+    # 设置语言
+    locale = QLocale()
+    translator = FluentTranslator(locale)
+    app.installTranslator(translator)
+
+    # 运行
     mainwindow = MainWindow()
     mainwindow.show()
     app.exec_()
