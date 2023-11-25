@@ -1,11 +1,29 @@
+import datetime
+import json
+import os
 import sys
 
-from PyQt5.QtGui import QPalette, QColor
-from PyQt5.QtWidgets import QVBoxLayout, QApplication, QHBoxLayout
-from PyQt5.QtCore import pyqtProperty, QPropertyAnimation, QSize
-from qfluentwidgets import ElevatedCardWidget, StrongBodyLabel, BodyLabel, LineEdit, TextEdit, CardWidget, isDarkTheme
+from PyQt5.QtGui import QPalette, QColor, QDesktopServices
+from PyQt5.QtWidgets import QVBoxLayout, QApplication, QHBoxLayout, QFrame
+from PyQt5.QtCore import pyqtProperty, QPropertyAnimation, QSize, QEvent, QUrl
+from qfluentwidgets import ElevatedCardWidget, StrongBodyLabel, BodyLabel, LineEdit, TextEdit, CardWidget, isDarkTheme, \
+    IconWidget, FluentIcon, SubtitleLabel, ProgressBar
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QWidget
+
+
+def format_time(timestamp):
+    """转换时间格式"""
+    now = datetime.datetime.now()
+    target = datetime.datetime.fromtimestamp(timestamp)
+    diff = now - target
+
+    if diff.days < 7:
+        return f"{diff.days}天前"
+    elif diff.days < 21:
+        return f"{diff.days // 7}周前"
+    else:
+        return target.strftime("%Y.%m.%d")
 
 
 class KnowledgeCard(ElevatedCardWidget):
@@ -314,6 +332,67 @@ class KnowledgeEditPad(QWidget):
 
         self.parent().parent().data = self.data
         self.reinitLayout()
+
+
+class HomeCard(CardWidget):
+    """ Example card """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.initUI()
+
+    def initUI(self):
+        """初始化UI"""
+        # 设置布局
+        self.mainLayout = QVBoxLayout(self)
+        self.setLayout(self.mainLayout)
+
+        # 添加控件
+        self.title = SubtitleLabel(self)  # 标题标签
+
+        self.info = BodyLabel(self)  # 信息标签
+        self.info.setStyleSheet("color: gray;")
+
+        self.preview = StrongBodyLabel(self)  # 预览标签
+
+        self.progress = ProgressBar(self)  # 掌握度进度条
+        self.progress.setTextVisible(True)
+
+        # 添加至布局
+        self.mainLayout.addWidget(self.title)
+        self.mainLayout.addWidget(self.info)
+        self.mainLayout.addWidget(self.preview)
+        self.mainLayout.addWidget(self.progress)
+
+    def initData(self, data):
+        # 载入数据
+        self.show()
+
+        self.data = data
+
+        self.jsonData = json.loads(open(os.path.join('.\\knowledge\\', data[0]), "r", encoding="utf-8").read())
+        kv_points_length = 0
+        for i in self.jsonData["knowledge_points"]:
+            kv_points_length += 1 if i["type"] == "kv" else None
+
+        # 设置控件信息
+        self.title.setText(data[1])  # 标题
+
+        self.info.setText(  # 信息标签
+            f"{kv_points_length}个知识块   上次复习{format_time(self.jsonData['last_review_time'])}   "
+            f"掌握{int(self.jsonData['mastery_level'] * 100)}%")
+
+        keys = [i["key"] for i in self.jsonData["knowledge_points"]]
+        shortKeys = '   '.join(keys)[:40] if len('   '.join(keys)) > 40 else '   '.join(keys)
+        self.preview.setText(f"{shortKeys}{'...' if len('   '.join(keys)) > 20 else ''}")  # Key预览标签
+
+        self.progress.setValue(int(self.jsonData["mastery_level"] * 100))  # 设置进度条值
+
+    def mouseReleaseEvent(self, e):
+        super().mouseReleaseEvent(e)
+        p = self.parent().parent().parent().parent()
+        p.stackWidget.setCurrentWidget(p.pageKnowledgeReview)  # noqa
+        p.pageKnowledgeReview.initData(self.data)  # noqa
 
 
 if __name__ == '__main__':

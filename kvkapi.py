@@ -158,9 +158,7 @@ def sd_correct(question: str, correct_answer: str, students_answer: str):
 
 def getKnowledgeData():
     """
-    获取知识点数据
-
-    注意：该函数暂未完成，代码仅为实力
+    获取知识库数据
     """
     knowledge_lst = []
     for f in os.listdir(".\\knowledge\\"):
@@ -168,7 +166,7 @@ def getKnowledgeData():
         knowledge_lst.append([
             f,
             file_data["name"],
-            time.strftime("%y/%m/%d", time.gmtime(file_data["created_time"])),
+            time.strftime("%Y.%m.%d", time.gmtime(file_data["last_review_time"])),
             file_data["tags"],
             file_data["mastery_level"]
         ])
@@ -177,9 +175,39 @@ def getKnowledgeData():
 
 
 def textToSpeech(text, path, rate=200):
+    """
+    Pyttsx3 文本音频生成保存为mp3文件
+
+    :param text: 文本
+    :param path: 保存路径
+    :param rate: 语速
+    """
     engine = pyttsx3.init()  # 初始化语音引擎
     engine.setProperty('rate', rate)  # 设置语速
     engine.setProperty('voice', engine.getProperty('voices')[0].id)
 
     engine.save_to_file(text, path)
     engine.runAndWait()
+
+
+def readText(path):
+    """
+    使用EasyOCR读取文字
+
+    :param path: 图片路径
+    """
+    try:
+        cv2  # noqa
+        easyocr  # noqa
+    except NameError:
+        import cv2
+        import easyocr
+
+    img = cv2.imread(path)  # 使用OpenCV二值化图片
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # 转成灰度图片
+    cv2.imwrite(".\\BINARY_PHOTO.png", img[1])  # 保存为暂存图片
+    # 实例化EasyOCR阅读器
+    reader = easyocr.Reader(["ch_sim", "en"], gpu=True)
+    result = reader.readtext(".\\BINARY_PHOTO.png", detail=0)  # 识别文本
+
+    return '\n'.join(result) if result else ""

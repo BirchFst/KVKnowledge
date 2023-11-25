@@ -22,9 +22,9 @@ class Ui_PageLibrary(object):
         self.topBar.setObjectName("topBar")
         self.horizontalLayout = QtWidgets.QHBoxLayout(self.topBar)
         self.horizontalLayout.setObjectName("horizontalLayout")
-        self.sortSelector = TransparentDropDownPushButton(self.topBar)
-        self.sortSelector.setObjectName("sortSelector")
-        self.horizontalLayout.addWidget(self.sortSelector)
+        self.collationSelector = TransparentDropDownPushButton(self.topBar)
+        self.collationSelector.setObjectName("sortSelector")
+        self.horizontalLayout.addWidget(self.collationSelector)
         self.filterSelector = TransparentDropDownPushButton(self.topBar)
         self.filterSelector.setObjectName("filterSelector")
         self.horizontalLayout.addWidget(self.filterSelector)
@@ -44,6 +44,6 @@ class Ui_PageLibrary(object):
     def retranslateUi(self, PageLibrary):
         _translate = QtCore.QCoreApplication.translate
         PageLibrary.setWindowTitle(_translate("PageLibrary", "Form"))
-        self.sortSelector.setText(_translate("PageLibrary", "创建日期"))
+        self.collationSelector.setText(_translate("PageLibrary", "创建日期"))
         self.filterSelector.setText(_translate("PageLibrary", "无筛选"))
 from qfluentwidgets import TableWidget, TransparentDropDownPushButton, TransparentToolButton

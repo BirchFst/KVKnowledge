@@ -13,102 +13,90 @@ import json
 import os.path
 import sys
 import threading
+import getpass
 import time
 from webbrowser import open as web_open
-from PyQt5.QtCore import Qt, QLocale
+import pyperclip
+from PyQt5.QtCore import Qt, QLocale, QThread, QTimer
 from PyQt5.QtWidgets import (QLabel, QHeaderView, QAction, QTableWidgetItem, QVBoxLayout, QHBoxLayout,
                              QWidget, QApplication, QAbstractItemView, QFileDialog)
 import kvkapi
-from pages import library, knowledgePreview, edit, exam, examReport
+import pwidgets
+from pages import library, knowledgePreview, edit, exam, examReport, home
 from qfluentwidgets import (NavigationItemPosition, isDarkTheme, FluentIcon, NavigationBar, FluentTitleBar, ProgressBar,
                             setThemeColor, FlowLayout, PillPushButton, RoundMenu, setTheme, Theme,
                             PopUpAniStackedWidget, Action, InfoBar, InfoBarPosition, MessageBox, FluentTranslator,
-                            MessageBoxBase, SubtitleLabel)
+                            MessageBoxBase, SubtitleLabel, TextEdit, TitleLabel, IndeterminateProgressBar)
 from qfluentwidgets.common.animation import BackgroundAnimationWidget
 from qfluentwidgets.components.widgets.frameless_window import FramelessWindow
 
 
-class Widget(QWidget):
-    def __init__(self, text: str, parent=None):
-        super().__init__(parent=parent)
-        self.label = QLabel(text, self)
-        self.label.setAlignment(Qt.AlignCenter)
-        self.hBoxLayout = QHBoxLayout(self)
-        self.hBoxLayout.addWidget(self.label, 1, Qt.AlignCenter)
-        self.setObjectName(text.replace(' ', '-'))
-
-
-class AcrylicWindow(BackgroundAnimationWidget, FramelessWindow):
-    """ Win11亚克力效果窗口 """
+class MicaMainWindow(BackgroundAnimationWidget, FramelessWindow):
+    """ 启用 Win11 云母材质效果的QMainWindow窗口 """
+    enableMica = True
 
     def __init__(self, parent=None):
-        self._isMicaEnabled = False
         super().__init__(parent=parent)
 
-        # enable mica effect on win11
-        self.setMicaEffectEnabled(True)
-
-    def setMicaEffectEnabled(self, isEnabled: bool):
-        """ 启用亚克力效果 """
         if sys.platform != 'win32' or sys.getwindowsversion().build < 22000:
             return
 
-        self._isMicaEnabled = isEnabled
-
-        if isEnabled:
+        if self.enableMica:
             self.windowEffect.setMicaEffect(self.winId(), isDarkTheme())
         else:
             self.windowEffect.removeBackgroundEffect(self.winId())
 
         self.setBackgroundColor(self._normalBackgroundColor())
 
-    def isMicaEffectEnabled(self):
-        return self._isMicaEnabled
 
-
-class MainWindow(AcrylicWindow):
+class MainWindow(MicaMainWindow):
     """Qt窗口主类"""
-    lock = False
+    pageLock = False  # 测试时的页面锁定属性
 
     def __init__(self):
         super().__init__()
-
         self.initUI()
 
     def initUI(self):
         """初始化UI"""
 
         # 初始化窗口
-        self.setTitleBar(FluentTitleBar(self))
+        self.setTitleBar(FluentTitleBar(self))  # 配置标题栏
         self.titleBar.raise_()
-
         self.setWindowTitle('Key-Value Knowledge')
-        self.setGeometry(100, 100, 1000, 650)
+
+        self.resize(1000, 650)  # 配置窗口大小
 
         # 初始化布局
-        self.layout = QHBoxLayout(self)
-        self.navigationBar = NavigationBar(self)
-        self.stackWidget = PopUpAniStackedWidget(self)
+        self.rootLayout = QHBoxLayout(self)  # 根布局
+        self.navigationBar = NavigationBar(self)  # 侧导航栏
+        self.stackWidget = PopUpAniStackedWidget(self)  # 主面板
 
-        self.layout.addWidget(self.navigationBar)
-        self.layout.addWidget(self.stackWidget)
+        # 在布局中添加控件
+        self.rootLayout.addWidget(self.navigationBar)
+        self.rootLayout.addWidget(self.stackWidget)
 
-        self.navigationBar.setMaximumWidth(80)
+        # 配置控件属性
+        self.navigationBar.setMaximumWidth(70)  # 设置侧导航栏最大宽度
 
-        self.layout.setSpacing(0)
-        self.layout.setContentsMargins(0, 50, 0, 0)
+        self.rootLayout.setSpacing(0)  # 布局间隙
+        self.rootLayout.setContentsMargins(0, 50, 0, 0)  # 布局边框
 
-        self.stackWidget.setStyleSheet(  # 设置亮色主题Qss
-            "#stack{background: rgba(253,253,253,150);"
-            "border-top-left-radius: 8px;"
-            "border: 1px solid rgba(200,200,200,100)}") if not isDarkTheme() \
-            else self.stackWidget.setStyleSheet(  # 设置暗色主题Qss
-            "#stack{background: rgba(15,15,15,150);"
-            "border-top-left-radius: 8px;"
-            "border: 1px solid rgba(200,200,200,100)}")
+        # 设置控件qss
+        if not isDarkTheme():
+            self.stackWidget.setStyleSheet(  # 设置亮色主题Qss
+                "#stack{background: rgba(253,253,253,150);"
+                "border-top-left-radius: 8px;"
+                "border: 1px solid rgba(200,200,200,100)}")
+        else:
+            self.stackWidget.setStyleSheet(  # 设置暗色主题Qss
+                "#stack{background: rgba(15,15,15,150);"
+                "border-top-left-radius: 8px;"
+                "border: 1px solid rgba(200,200,200,100)}")
+
         self.stackWidget.setObjectName("stack")
 
-        # 初始化页面
+        # 初始化各页面
         self.initPages()
 
         # 初始化侧边导航栏
@@ -116,11 +104,10 @@ class MainWindow(AcrylicWindow):
 
     def setCurrentPage(self, widget):
         """设置当前页面"""
-        if not self.lock:
+        if not self.pageLock:
             self.stackWidget.setCurrentWidget(widget)
             widget.reinit()
         else:
-            self.navigationBar.setCurrentItem(self.pageLibrary.objectName())
             InfoBar.error(
                 title='禁止切出',
                 content="测试完毕后即可切换页面",
@@ -133,13 +120,22 @@ class MainWindow(AcrylicWindow):
 
     def initNavigationBar(self):
         """初始化侧边导航栏"""
-        # 库按钮
-        self.stackWidget.addWidget(self.pageLibrary)
+        # 主页按钮
+        self.stackWidget.addWidget(self.pageHome)
         self.navigationBar.addItem(
-            routeKey=self.pageLibrary.objectName(),
+            routeKey=self.pageHome.objectName(),
+            icon=FluentIcon.HOME,
+            text="主页",
+            onClick=lambda: self.setCurrentPage(self.pageHome),
+            position=NavigationItemPosition.TOP,
+        )
+        # 库按钮
+        self.stackWidget.addWidget(self.pageKnowledgeManager)
+        self.navigationBar.addItem(
+            routeKey=self.pageKnowledgeManager.objectName(),
             icon=FluentIcon.IOT,
             text="仓库",
-            onClick=lambda: self.setCurrentPage(self.pageLibrary),
+            onClick=lambda: self.setCurrentPage(self.pageKnowledgeManager),
             position=NavigationItemPosition.TOP,
         )
 
@@ -163,25 +159,29 @@ class MainWindow(AcrylicWindow):
             selectable=False,
         )
 
-        self.stackWidget.addWidget(self.pageKnowledgePreview)
-        self.stackWidget.addWidget(self.pageExam)
-        self.stackWidget.addWidget(self.pageExamReport)
+        # 其他非可导航的页面
+        self.stackWidget.addWidget(self.pageKnowledgeReview)
+        self.stackWidget.addWidget(self.pageKnowledgeTest)
+        self.stackWidget.addWidget(self.pageKnowledgeTestReport)
 
-        self.navigationBar.setCurrentItem(self.pageLibrary.objectName())
+        # 设置默认页面为主页
+        self.navigationBar.setCurrentItem(self.pageHome.objectName())
 
     def initPages(self):
-        self.pageLibrary = PageLibrary(self.stackWidget)
-        self.pageKnowledgePreview = PageKnowledgePreview(self.stackWidget)
-        self.pageAddFile = PageEdit(self.stackWidget)
-        self.pageExam = PageExam(self.stackWidget)
-        self.pageExamReport = PageExamReport(self.stackWidget)
+        """初始化各页面"""
+        self.pageHome = PageHome(self.stackWidget)  # 主页
+        self.pageKnowledgeManager = PageKnowledgeManager(self.stackWidget)  # 知识管理页面
+        self.pageKnowledgeReview = PageKnowledgeReview(self.stackWidget)  # 知识复习页面
+        self.pageAddFile = PageEdit(self.stackWidget)  # 新建文件页面
+        self.pageKnowledgeTest = PageTest(self.stackWidget)  # 测试页面
+        self.pageKnowledgeTestReport = PageKnowledgeTestReport(self.stackWidget)  # 测试报告页面
 
 
-class PageLibrary(QWidget, library.Ui_PageLibrary):
+class PageKnowledgeManager(QWidget, library.Ui_PageLibrary):
     """库页面Widget"""
 
-    sortOrder = 0x00
-    sortOrderOptions = {
+    collation = 0x00
+    collationList = {
         0x00: ["创建日期", FluentIcon.DATE_TIME.icon],
         0x01: ["创建日期(倒序)", FluentIcon.DATE_TIME.icon],
         0x02: ["名称 A-Z", FluentIcon.TAG.icon],
@@ -190,14 +190,10 @@ class PageLibrary(QWidget, library.Ui_PageLibrary):
         0x05: ["掌握程度(倒叙)", FluentIcon.MARKET.icon],
     }
 
-    filterOrder = None
+    filterRules = None
 
     # TODO 更改拟定数据
-    tags = [
-        "历史",
-        "数学",
-        "物理",
-    ]
+    tags = ["语文", "数学", "英语", "物理", "地理", "生物", "政治", "历史", "Python"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -213,9 +209,9 @@ class PageLibrary(QWidget, library.Ui_PageLibrary):
         """
         排序方式更改时的回调函数
         """
-        self.sortOrder = index
-        self.sortSelector.setIcon(self.sortOrderOptions[self.sortOrder][1]())
-        self.sortSelector.setText(self.sortOrderOptions[self.sortOrder][0])
+        self.collation = index
+        self.collationSelector.setIcon(self.collationList[self.collation][1]())
+        self.collationSelector.setText(self.collationList[self.collation][0])
 
         self.initLibrary()
 
@@ -223,29 +219,29 @@ class PageLibrary(QWidget, library.Ui_PageLibrary):
         """
         筛选方式更改时的回调函数
         """
-        self.filterOrder = tag
+        self.filterRules = tag
         self.filterSelector.setText(tag)
 
         self.initLibrary()
 
     def callBackEnterKnowledge(self, item):
-        self.parent().parent().stackWidget.setCurrentWidget(self.parent().parent().pageKnowledgePreview)  # noqa
-        self.parent().parent().pageKnowledgePreview.initData(self.data[item.row()])  # noqa
+        self.parent().parent().stackWidget.setCurrentWidget(self.parent().parent().pageKnowledgeReview)  # noqa
+        self.parent().parent().pageKnowledgeReview.initData(self.data[item.row()])  # noqa
 
     def initWidgets(self):
         """初始化控件功能"""
 
         # 设置下拉框控件
-        self.sortSelector.setIcon(FluentIcon.SCROLL.icon())
-        self.sortSelectorMenu = RoundMenu()
-        for a in self.sortOrderOptions.keys():
+        self.collationSelector.setIcon(FluentIcon.SCROLL.icon())
+        self.collationSelectorMenu = RoundMenu()
+        for c in self.collationList.keys():
             # 添加菜单项并绑定事件
-            action = QAction(self.sortOrderOptions[a][1](), self.sortOrderOptions[a][0])
-            exec(f"action.triggered.connect(lambda :self.callBackSortOptions({a}))", locals(), locals())  # noqa
+            action = QAction(self.collationList[c][1](), self.collationList[c][0])
+            exec(f"action.triggered.connect(lambda :self.callBackSortOptions({c}))", locals(), locals())  # noqa
 
-            self.sortSelectorMenu.addAction(action)
+            self.collationSelectorMenu.addAction(action)
 
-        self.sortSelector.setMenu(self.sortSelectorMenu)
+        self.collationSelector.setMenu(self.collationSelectorMenu)
 
         # 筛选下拉框
         self.filterSelector.setIcon(FluentIcon.FILTER.icon())
@@ -308,7 +304,7 @@ class PageLibrary(QWidget, library.Ui_PageLibrary):
         """
         根据标签筛选列表数据
         """
-        self.data = list(filter(lambda x: self.filterOrder in x[3], self.data))
+        self.data = list(filter(lambda x: self.filterRules in x[3], self.data))
 
     def initLibrary(self):
         """初始化仓库信息"""
@@ -317,15 +313,15 @@ class PageLibrary(QWidget, library.Ui_PageLibrary):
         self.data = kvkapi.getKnowledgeData()
 
         # 筛选数据
-        self.filterByTag() if self.filterOrder is not None else None
+        self.filterByTag() if self.filterRules is not None else None
 
         # 排序数据
-        if self.sortOrder == 0x00 or self.sortOrder == 0x01:
-            self.sortByDate(self.sortOrder == 0x01)
-        elif self.sortOrder == 0x02 or self.sortOrder == 0x03:
-            self.sortByName(self.sortOrder == 0x03)
-        elif self.sortOrder == 0x04 or self.sortOrder == 0x05:
-            self.sortByMastery(self.sortOrder == 0x05)
+        if self.collation == 0x00 or self.collation == 0x01:
+            self.sortByDate(self.collation == 0x01)
+        elif self.collation == 0x02 or self.collation == 0x03:
+            self.sortByName(self.collation == 0x03)
+        elif self.collation == 0x04 or self.collation == 0x05:
+            self.sortByMastery(self.collation == 0x05)
 
         self.knowledgeTable.setRowCount(len(self.data))
         # 填充表格
@@ -381,13 +377,14 @@ class PageLibrary(QWidget, library.Ui_PageLibrary):
         self.initLibrary()
 
         # 刷新2次保证界面不错乱(某种玄学Bug导致)
-        self.parent().setCurrentIndex(1)
-        self.parent().setCurrentIndex(0)
-        self.parent().setCurrentIndex(1)
-        self.parent().setCurrentIndex(0)
+        if self.parent().currentIndex() != 1:
+            self.parent().setCurrentIndex(2, duration=0)
+            self.parent().setCurrentIndex(1, duration=0)
+            self.parent().setCurrentIndex(2, duration=0)
+            self.parent().setCurrentIndex(1, duration=200)
 
 
-class PageKnowledgePreview(QWidget, knowledgePreview.Ui_PageKnowledgePreview):
+class PageKnowledgeReview(QWidget, knowledgePreview.Ui_PageKnowledgePreview):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.setupUi(self)
@@ -401,7 +398,13 @@ class PageKnowledgePreview(QWidget, knowledgePreview.Ui_PageKnowledgePreview):
 
         # 绑定按钮事件
         self.listenButton.clicked.connect(self.TTSOutput)
-        self.examButton.clicked.connect(lambda: self.parent().parent().setCurrentPage(self.parent().parent().pageExam))
+        self.testButton.clicked.connect(lambda: self.parent().parent().setCurrentPage(self.parent().parent().pageKnowledgeTest))
+
+    def saveNewData(self, newData):
+        """保存测试完成后的新数据"""
+        with open(self.path, "w", encoding="utf-8") as file:
+            file.write(json.dumps(newData))
+            file.close()
 
     def TTSOutput(self):
         """TTS: 导出音频"""
@@ -414,7 +417,9 @@ class PageKnowledgePreview(QWidget, knowledgePreview.Ui_PageKnowledgePreview):
 
     def initData(self, data):
         """初始化数据"""
-        self.jsonData = json.loads(open(os.path.join('.\\knowledge\\', data[0]), "r", encoding="utf-8").read())
+        self.path = os.path.join('.\\knowledge\\', data[0])
+        self.jsonData = json.loads(open(self.path, "r", encoding="utf-8").read())
+
         kv_points_length = 0
         for i in self.jsonData["knowledge_points"]:
             kv_points_length += 1 if i["type"] == "kv" else None
@@ -422,22 +427,9 @@ class PageKnowledgePreview(QWidget, knowledgePreview.Ui_PageKnowledgePreview):
         self.knowledgeTitle.setText(data[1])
         self.masteryRing.setValue(int(data[4] * 100))
         self.knowledgeInfoTitle.setText(
-            f"{kv_points_length}个知识块   上次复习{self.format_time(self.jsonData['last_review_time'])}")
+            f"{kv_points_length}个知识块   上次复习{pwidgets.format_time(self.jsonData['last_review_time'])}")
 
         self.mainWidget.reinitData(self.jsonData)
-
-    @staticmethod
-    def format_time(timestamp):
-        now = datetime.datetime.now()
-        target = datetime.datetime.fromtimestamp(timestamp)
-        diff = now - target
-
-        if diff.days < 7:
-            return f"{diff.days}天前"
-        elif diff.days < 21:
-            return f"{diff.days // 7}周前"
-        else:
-            return target.strftime("%d/%m/%y")
 
 
 class PageEdit(QWidget, edit.Ui_PageEdit):
@@ -493,6 +485,7 @@ class PageEdit(QWidget, edit.Ui_PageEdit):
         self.commandBar.addAction(Action(FluentIcon.UP, "向前放置", triggered=lambda: self.moveBlock(True)))
         self.commandBar.addAction(Action(FluentIcon.DOWN, "向后放置", triggered=lambda: self.moveBlock(False)))
         self.commandBar.addAction(Action(FluentIcon.DELETE, "删除块", triggered=self.deleteBlock))
+        self.commandBar.addAction(Action(FluentIcon.PHOTO, "从图片中提取", triggered=self.OCR))
         self.commandBar.addAction(Action(FluentIcon.SAVE, "保存", triggered=self.saveData))
         self.commandBar.addAction(Action(FluentIcon.TAG, "标签", triggered=self.setTags))
         self.commandBar.addAction(Action(FluentIcon.ADD, "新建知识页", triggered=self.newData))
@@ -596,6 +589,33 @@ class PageEdit(QWidget, edit.Ui_PageEdit):
             parent=self
         )
 
+    def OCR(self):
+        """调用OCR技术"""
+        path = QFileDialog.getOpenFileName(self, "选择图像", "", "图像文件(*.jpg *.gif *.png *.jpeg *.bmp)")
+        self.w = MessageBoxOCRWaiting(self.window())
+        self.ocrText = None
+
+        threading.Thread(target=self.waitingOCR, args=(path[0],)).start()
+
+        # 初始化计时器
+        self.timer = QTimer()
+        self.timer.setInterval(1000)
+        self.timer.timeout.connect(self.ocrUpdate)
+        self.timer.start()
+
+        self.w.exec_()
+
+    def ocrUpdate(self):
+        if self.ocrText:
+            self.w.textFrame.setText(self.ocrText)
+            self.w.title.setText("提取完成")
+            self.w.progressBar.stop()
+            self.timer.stop()
+
+    def waitingOCR(self, path):
+        """OCR等待进程"""
+        self.ocrText = kvkapi.readText(path)
+
     def newData(self):
         """新建知识页"""
         if not self.saved:
@@ -628,12 +648,43 @@ class PageEdit(QWidget, edit.Ui_PageEdit):
 
     def setTags(self):
         """设置标签"""
-        w = PageEditSetTagsBox(self, self.data["tags"])
+        w = PageEditSetTagsBox(self.window(), self.data["tags"])
         e = w.exec_()
-        print(e)
+
         if e is not None:
             self.data["tags"] = e
-        print(self.data["tags"])
+
+
+class MessageBoxOCRWaiting(MessageBoxBase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.initUI()
+
+    def initUI(self):
+        """初始化UI"""
+        # 初始化布局
+        self.setLayout(self.viewLayout)
+
+        # 标题
+        self.title = SubtitleLabel(self)
+        self.title.setText("正在提取文本...")
+        self.viewLayout.addWidget(self.title)
+
+        # 文本框
+        self.textFrame = TextEdit(self)
+        self.viewLayout.addWidget(self.textFrame)
+
+        # 进度条
+        self.progressBar = IndeterminateProgressBar(self)
+        self.viewLayout.addWidget(self.progressBar)
+
+        # 按钮
+        self.yesButton.setText("复制")
+        self.yesButton.clicked.connect(self.copyText)
+        self.cancelButton.setText("关闭")
+
+    def copyText(self):
+        pyperclip.copy(self.textFrame.toPlainText())
 
 
 class PageEditSetTagsBox(MessageBoxBase):
@@ -680,7 +731,26 @@ class PageEditSetTagsBox(MessageBoxBase):
             return self.data
 
 
-class PageExam(QWidget, exam.Ui_PageExam):
+class PageEditShowTextBox(MessageBoxBase):
+    """ Custom message box """
+
+    def __init__(self, parent, text):
+        super().__init__(parent)
+
+        self.titleLabel = SubtitleLabel('图像文本提取', self)
+        self.editor = TextEdit(self)
+        self.editor.setText(text)
+
+        # 在布局中添加控件
+        self.viewLayout.addWidget(self.titleLabel)
+        self.viewLayout.addWidget(self.editor)
+
+        self.yesButton.setText("确定")
+
+        self.widget.setMinimumWidth(350)
+
+
+class PageTest(QWidget, exam.Ui_PageExam):
     answerEditFrameMaxHeight = 500
 
     def __init__(self, *args, **kwargs):
@@ -695,13 +765,13 @@ class PageExam(QWidget, exam.Ui_PageExam):
 
         self.enterButton.clicked.connect(self.callBackEnterButton)
 
-    def startExam(self):
+    def startTest(self):
         """开始测试"""
         # 锁定页面
         self.parent().parent().lock = True
 
         # 获取数据
-        self.data = self.parent().parent().pageKnowledgePreview.jsonData
+        self.data = self.parent().parent().pageKnowledgeReview.jsonData
 
         # 获取数据中信息
         self.no_question = len(self.data["knowledge_points"]) - 1  # 总题数
@@ -740,9 +810,16 @@ class PageExam(QWidget, exam.Ui_PageExam):
         # 修改数据
         self.report["end_time"] = time.time()
 
+        # 更新数据到本地知识点
+        newData = self.parent().parent().pageKnowledgeReview.jsonData.copy()
+        newData["last_review_time"] = time.time()
+        newData["mastery_level"] = (self.report["no_all"] - self.report["no_wrong"]) / self.report["no_all"]
+
+        self.parent().parent().pageKnowledgeReview.saveNewData(newData)
+
         # 重新设置UI
-        self.parent().parent().setCurrentPage(self.parent().parent().pageExamReport)
-        self.parent().parent().pageExamReport.initData(self.report)
+        self.parent().parent().setCurrentPage(self.parent().parent().pageKnowledgeTestReport)
+        self.parent().parent().pageKnowledgeTestReport.initData(self.report)
 
     def callBackEnterButton(self):
         """提交按钮回调"""
@@ -805,10 +882,10 @@ class PageExam(QWidget, exam.Ui_PageExam):
 
     def reinit(self):
         # 开始测试
-        self.startExam()
+        self.startTest()
 
 
-class PageExamReport(QWidget, examReport.Ui_PageExamReport):
+class PageKnowledgeTestReport(QWidget, examReport.Ui_PageExamReport):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.setupUi(self)
@@ -822,13 +899,71 @@ class PageExamReport(QWidget, examReport.Ui_PageExamReport):
 
     def initData(self, data):
         """初始化数据并展示"""
+        # 显示界面
         self.nOKnoeledgeLabel.setText(str(data["no_all"]))
         self.timeLabel.setText(f'{int(data["end_time"] - data["start_time"])} 秒')
         self.missingLabel.setText(f'{data["no_wrong"]} 个块')
 
         self.progressRing.setValue(int((data["no_all"] - data["no_wrong"]) / data["no_all"] * 100))
+
+        # 更新数据
+
         self.returnButton.clicked.connect(
-            lambda: self.parent().parent().setCurrentPage(self.parent().parent().pageLibrary))
+            lambda: self.parent().parent().setCurrentPage(self.parent().parent().pageKnowledgeManager))
+
+
+class PageHome(QWidget, home.Ui_PageHome):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setupUi(self)
+        self.initUI()
+        self.reinit()
+
+    def initUI(self):
+        """初始化UI"""
+
+        # 获取当前时间
+        now = datetime.datetime.now()
+
+        # 根据时间判断问候语
+        if now.hour < 12:
+            greeting = "上午好"
+        elif now.hour < 18:
+            greeting = "下午好"
+        else:
+            greeting = "晚上好"
+
+        # 获取当前用户名
+        username = getpass.getuser()
+
+        # 输出问候语和用户名
+        self.welcomeLabel.setText(f"{greeting},  {username}!")
+
+    def reinit(self):
+        # 筛选数据
+        self.data = kvkapi.getKnowledgeData()
+        self.dataLowMastery = sorted(self.data, key=lambda x: x[-1])
+        self.dataLowMastery = self.dataLowMastery[:2] if len(self.dataLowMastery) >= 2 else self.dataLowMastery
+        self.dataLongCycle = sorted(self.data, key=lambda x: x[2])
+        self.dataLongCycle = self.dataLongCycle[:2] if len(self.dataLongCycle) >= 2 else self.dataLongCycle
+
+        # 隐藏空卡
+        self.card1.hide()
+        self.card2.hide()
+        self.card3.hide()
+        self.card4.hide()
+
+        if len(self.dataLowMastery) == 1:
+            self.card1.initData(self.dataLowMastery[0])
+        elif len(self.dataLowMastery) == 2:
+            self.card1.initData(self.dataLowMastery[0])
+            self.card2.initData(self.dataLowMastery[1])
+
+        if len(self.dataLongCycle) == 1:
+            self.card3.initData(self.dataLongCycle[0])
+        elif len(self.dataLongCycle) == 2:
+            self.card3.initData(self.dataLongCycle[0])
+            self.card4.initData(self.dataLongCycle[1])
 
 
 def setHighDpi():
