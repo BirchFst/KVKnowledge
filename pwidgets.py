@@ -27,10 +27,12 @@ def format_time(timestamp):
 
 
 class KnowledgeCard(ElevatedCardWidget):
-    showAnswer = False
+    # 设置初始可见性
+    visitable = False
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
         self.initUI()
 
         self.colorValueOpacity = 0
@@ -63,27 +65,34 @@ class KnowledgeCard(ElevatedCardWidget):
         self.valueLabel.setText(data["value"])
 
     def mouseReleaseEvent(self, e):
-        self.showAnswer = False if self.showAnswer else True
+        super().mouseReleaseEvent(e)
 
-        if self.showAnswer:
-            self.animation = QPropertyAnimation(self)
-            self.animation.setTargetObject(self)
-            self.animation.setPropertyName(b"valueOpacity")
-            self.animation.setStartValue(0)
-            self.animation.setEndValue(255)
-            self.animation.setDuration(100)
+        self.visitable = False if self.visitable else True
 
-            self.animation.start()
-
+        if self.visitable:
+            self.showAnswer()
         else:
-            self.animation = QPropertyAnimation(self)
-            self.animation.setTargetObject(self)
-            self.animation.setPropertyName(b"valueOpacity")
-            self.animation.setStartValue(255)
-            self.animation.setEndValue(0)
-            self.animation.setDuration(100)
+            self.hideAnswer()
 
-            self.animation.start()
+    def hideAnswer(self):
+        self.animation = QPropertyAnimation(self)
+        self.animation.setTargetObject(self)
+        self.animation.setPropertyName(b"valueOpacity")
+        self.animation.setStartValue(255)
+        self.animation.setEndValue(0)
+        self.animation.setDuration(100)
+
+        self.animation.start()
+
+    def showAnswer(self):
+        self.animation = QPropertyAnimation(self)
+        self.animation.setTargetObject(self)
+        self.animation.setPropertyName(b"valueOpacity")
+        self.animation.setStartValue(0)
+        self.animation.setEndValue(255)
+        self.animation.setDuration(100)
+
+        self.animation.start()
 
     def setValueOpacity(self, value):
         if isDarkTheme():
@@ -120,7 +129,7 @@ class KnowledgeView(QWidget):
         if self.data:
             self.reinitLayout(event.oldSize(), event.size())
 
-    def reinitLayout(self, old=None, new=None):
+    def reinitLayout(self, old=None, new=None, visitable=None):
         """重初始化卡片"""
 
         # 若长宽变化幅度不大则不重新布局
@@ -154,9 +163,17 @@ class KnowledgeView(QWidget):
             # 添加卡片
             for card in range(no_cards * line, no_cards * line + no_cards):
                 if card < len(self.data["knowledge_points"]):
+                    # 创建卡片
                     c = KnowledgeCard(self.lines[line])
                     c.setData(self.data["knowledge_points"][card])
+
+                    # 添加至布局
                     self.lines[line].layout().addWidget(c)
+
+                    if visitable is None:
+                        return
+
+                    c.showAnswer() if visitable else c.hideAnswer()
 
 
 class EditKeyFrame(LineEdit):

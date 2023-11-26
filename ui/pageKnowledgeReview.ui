@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>PageKnowledgePreview</class>
- <widget class="QWidget" name="PageKnowledgePreview">
+ <class>PageKnowledgeReview</class>
+ <widget class="QWidget" name="PageKnowledgeReview">
   <property name="geometry">
    <rect>
     <x>0</x>
@@ -188,7 +188,7 @@
     <widget class="QWidget" name="BottomWidget" native="true">
      <layout class="QHBoxLayout" name="horizontalLayout_2">
       <item>
-       <widget class="PushButton" name="examButton">
+       <widget class="PushButton" name="testButton">
         <property name="minimumSize">
          <size>
           <width>100</width>
@@ -210,6 +210,19 @@
         </property>
         <property name="text">
          <string>随听</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="PushButton" name="deleteButton">
+        <property name="minimumSize">
+         <size>
+          <width>100</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="text">
+         <string>删除</string>
         </property>
        </widget>
       </item>

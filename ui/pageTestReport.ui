@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>PageExamReport</class>
- <widget class="QWidget" name="PageExamReport">
+ <class>PageTestReport</class>
+ <widget class="QWidget" name="PageTestReport">
   <property name="geometry">
    <rect>
     <x>0</x>

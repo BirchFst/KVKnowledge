@@ -9,6 +9,8 @@
 @License :   GNU GENERAL PUBLIC LICENSE
 """
 import os
+
+import cv2
 import pyttsx3
 import time
 import _thread as thread
@@ -62,11 +64,11 @@ class WsParam:
 
 
 def _socket_on_error(ws, error):  # noqa
-    print("### error:", error)
+    pass
 
 
 def _socket_on_close(ws, one, two):  # noqa
-    print(" ")
+    pass
 
 
 def _socket_on_open(ws):
@@ -82,7 +84,6 @@ def _socket_on_message(ws, message):
     data = json.loads(message)
     code = data['header']['code']
     if code != 0:
-        print(f'请求错误: {code}, {data}')
         ws.close()
     else:
         choices = data["payload"]["choices"]
@@ -117,7 +118,8 @@ def _gen_params(appid, domain, question):
     return data
 
 
-def sd_request(appid, api_key, api_secret, Spark_url, domain, question):
+def sd_send(appid, api_key, api_secret, Spark_url, domain, question):
+    """向星火语言模型发送请求"""
     wsParam = WsParam(appid, api_key, api_secret, Spark_url)
     websocket.enableTrace(False)
     wsUrl = wsParam.create_url()
@@ -152,7 +154,7 @@ def sd_correct(question: str, correct_answer: str, students_answer: str):
                    "}"
     }]
     sd_answer = ""
-    sd_request(SD_APP_ID, SD_API_KEY, SD_API_SECRET, "ws://spark-api.xf-yun.com/v2.1/chat", "generalv2", question)
+    sd_send(SD_APP_ID, SD_API_KEY, SD_API_SECRET, "ws://spark-api.xf-yun.com/v2.1/chat", "generalv2", question)
     return sd_answer
 
 
@@ -190,24 +192,89 @@ def textToSpeech(text, path, rate=200):
     engine.runAndWait()
 
 
-def readText(path):
+def readText(path=".\\BINARY_PHOTO.png"):
     """
     使用EasyOCR读取文字
 
     :param path: 图片路径
     """
     try:
+        PaddleOCR  # noqa
+    except NameError:
+        from paddleocr import PaddleOCR
+
+    ocr = PaddleOCR(use_angle_cls=False, use_gpu=True)
+    result = ocr.ocr(path, cls=False)
+    # 打印所有文本信息
+    text = '\n'.join([i[1][0] for i in result[0]])
+    return text, result
+
+
+def drawOCRLine(result, path=".\\BINARY_PHOTO.png"):
+    """绘制 OCR 提取框"""
+    img = cv2.imread(path)
+    for block in result:
+        for i in range(4):
+            cv2.line(img, (int(block[0][i][0]), int(block[0][i][1])),
+                     (int(block[0][(i + 1) % 4][0]), int(block[0][(i + 1) % 4][1])),
+                     (0, 0, 255), 3)
+
+    cv2.imwrite(path, img)
+
+
+def toGray(path):
+    """
+    图像转灰度图
+
+    :param path: 图片路径
+    """
+    try:
         cv2  # noqa
-        easyocr  # noqa
     except NameError:
         import cv2
-        import easyocr
 
     img = cv2.imread(path)  # 使用OpenCV二值化图片
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # 转成灰度图片
-    cv2.imwrite(".\\BINARY_PHOTO.png", img[1])  # 保存为暂存图片
-    # 实例化EasyOCR阅读器
-    reader = easyocr.Reader(["ch_sim", "en"], gpu=True)
-    result = reader.readtext(".\\BINARY_PHOTO.png", detail=0)  # 识别文本
+    cv2.imwrite(".\\BINARY_PHOTO.png", img)  # 保存为暂存图片
 
-    return '\n'.join(result) if result else ""
+
+def correctText(text):
+    """修正文本"""
+    global SD_APP_ID, SD_API_KEY, SD_API_SECRET, sd_answer
+
+    if DEBUG_MODE:
+        return """
+        {"result": "DEBUG MODE ENABLED"}"""
+
+    question = [{
+        "role": "user",
+        "content": "This is a text extracted using OCR technology, which may contain errors. Please try to"
+                   " understand the text and fix the recognized characters. Remove unnecessary line breaks."
+                   "\n text: " + text
+    }]
+    sd_answer = ""
+    sd_send(SD_APP_ID, SD_API_KEY, SD_API_SECRET, "ws://spark-api.xf-yun.com/v2.1/chat", "generalv2", question)
+    return sd_answer
+
+
+def KVText(text):
+    """将笔记文本Key=Value化"""
+    global SD_APP_ID, SD_API_KEY, SD_API_SECRET, sd_answer
+
+    if DEBUG_MODE:
+        return """
+        {"KEY": "DEBUG MODE ENABLED"}"""
+
+    question = [{
+        "role": "user",
+        "content": 'Summarize the notes I provided in Key=Value format, such as {"text": "由于鸦片泛滥，林则徐发动虎门销烟运动'
+                   '虎门销烟是禁烟斗争的胜利..."}=>'
+                   '{"虎门销烟的意义": "是禁烟斗争的胜利","虎门硝烟的起因": "鸦片泛滥"}. You need to ensure that someone who has '
+                   'reviewed can look at the Key text and retell the Value text. I input them in JSON format, and you'
+                   ' also output them in '
+                   'JSON format. Ensure that the JSON text you provide can be read by json.loads\n'
+                   '{"text": "' + text + '"}'
+    }]
+    sd_answer = ""
+    sd_send(SD_APP_ID, SD_API_KEY, SD_API_SECRET, "ws://spark-api.xf-yun.com/v2.1/chat", "generalv2", question)
+    return sd_answer

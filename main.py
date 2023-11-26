@@ -17,18 +17,23 @@ import getpass
 import time
 from webbrowser import open as web_open
 import pyperclip
-from PyQt5.QtCore import Qt, QLocale, QThread, QTimer
+from PyQt5.QtCore import Qt, QLocale, QTimer
+from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import (QLabel, QHeaderView, QAction, QTableWidgetItem, QVBoxLayout, QHBoxLayout,
                              QWidget, QApplication, QAbstractItemView, QFileDialog)
 import kvkapi
 import pwidgets
-from pages import library, knowledgePreview, edit, exam, examReport, home
+from pages import library, knowledgeReview, edit, test, testReport, home
 from qfluentwidgets import (NavigationItemPosition, isDarkTheme, FluentIcon, NavigationBar, FluentTitleBar, ProgressBar,
                             setThemeColor, FlowLayout, PillPushButton, RoundMenu, setTheme, Theme,
                             PopUpAniStackedWidget, Action, InfoBar, InfoBarPosition, MessageBox, FluentTranslator,
-                            MessageBoxBase, SubtitleLabel, TextEdit, TitleLabel, IndeterminateProgressBar)
+                            MessageBoxBase, SubtitleLabel, TextEdit, IndeterminateProgressBar, ImageLabel)
 from qfluentwidgets.common.animation import BackgroundAnimationWidget
 from qfluentwidgets.components.widgets.frameless_window import FramelessWindow
+import logging
+
+logging.disable(logging.DEBUG)  # 关闭DEBUG日志的打印
+logging.disable(logging.WARNING)  # 关闭WARNING日志的打印
 
 
 class MicaMainWindow(BackgroundAnimationWidget, FramelessWindow):
@@ -140,12 +145,12 @@ class MainWindow(MicaMainWindow):
         )
 
         # 新建
-        self.stackWidget.addWidget(self.pageAddFile)
+        self.stackWidget.addWidget(self.pageEdit)
         self.navigationBar.addItem(
-            routeKey=self.pageAddFile.objectName(),
+            routeKey=self.pageEdit.objectName(),
             icon=FluentIcon.ADD_TO,
             text="添加",
-            onClick=lambda: self.setCurrentPage(self.pageAddFile),
+            onClick=lambda: self.setCurrentPage(self.pageEdit),
             position=NavigationItemPosition.TOP,
         )
 
@@ -172,7 +177,7 @@ class MainWindow(MicaMainWindow):
         self.pageHome = PageHome(self.stackWidget)  # 主页
         self.pageKnowledgeManager = PageKnowledgeManager(self.stackWidget)  # 知识管理页面
         self.pageKnowledgeReview = PageKnowledgeReview(self.stackWidget)  # 知识复习页面
-        self.pageAddFile = PageEdit(self.stackWidget)  # 新建文件页面
+        self.pageEdit = PageEdit(self.stackWidget)  # 新建文件页面
         self.pageKnowledgeTest = PageTest(self.stackWidget)  # 测试页面
         self.pageKnowledgeTestReport = PageKnowledgeTestReport(self.stackWidget)  # 测试报告页面
 
@@ -205,7 +210,7 @@ class PageKnowledgeManager(QWidget, library.Ui_PageLibrary):
         # 初始化数据
         self.initLibrary()
 
-    def callBackSortOptions(self, index):
+    def sortOptionsCallBack(self, index):
         """
         排序方式更改时的回调函数
         """
@@ -215,7 +220,7 @@ class PageKnowledgeManager(QWidget, library.Ui_PageLibrary):
 
         self.initLibrary()
 
-    def callBackFilterOptions(self, tag):
+    def filterOptionsCallBack(self, tag):
         """
         筛选方式更改时的回调函数
         """
@@ -224,7 +229,7 @@ class PageKnowledgeManager(QWidget, library.Ui_PageLibrary):
 
         self.initLibrary()
 
-    def callBackEnterKnowledge(self, item):
+    def enterKnowledgeCallBack(self, item):
         self.parent().parent().stackWidget.setCurrentWidget(self.parent().parent().pageKnowledgeReview)  # noqa
         self.parent().parent().pageKnowledgeReview.initData(self.data[item.row()])  # noqa
 
@@ -277,7 +282,7 @@ class PageKnowledgeManager(QWidget, library.Ui_PageLibrary):
         self.knowledgeTable.setEditTriggers(QAbstractItemView.NoEditTriggers)
 
         # 设置表格点击回调
-        self.knowledgeTable.itemClicked.connect(self.callBackEnterKnowledge)
+        self.knowledgeTable.itemClicked.connect(self.enterKnowledgeCallBack)
 
         # 顶层控件
         self.addKnowledge.setIcon(FluentIcon.ADD)
@@ -360,7 +365,7 @@ class PageKnowledgeManager(QWidget, library.Ui_PageLibrary):
             item.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
             itemLayout.addWidget(item)
 
-            item = ProgressBar(self)
+            item = ProgressBar(self)  # noqa
 
             item.setMaximumWidth(160)
             item.setFixedHeight(5)
@@ -384,7 +389,7 @@ class PageKnowledgeManager(QWidget, library.Ui_PageLibrary):
             self.parent().setCurrentIndex(1, duration=200)
 
 
-class PageKnowledgeReview(QWidget, knowledgePreview.Ui_PageKnowledgePreview):
+class PageKnowledgeReview(QWidget, knowledgeReview.Ui_PageKnowledgeReview):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.setupUi(self)
@@ -398,7 +403,31 @@ class PageKnowledgeReview(QWidget, knowledgePreview.Ui_PageKnowledgePreview):
 
         # 绑定按钮事件
         self.listenButton.clicked.connect(self.TTSOutput)
-        self.testButton.clicked.connect(lambda: self.parent().parent().setCurrentPage(self.parent().parent().pageKnowledgeTest))
+        self.testButton.clicked.connect(
+            lambda: self.parent().parent().setCurrentPage(self.parent().parent().pageKnowledgeTest))
+        self.visibleToggleButton.clicked.connect(self.visibleToggleCallBack)
+        self.editButton.clicked.connect(self.editButtonCallBack)
+        self.deleteButton.clicked.connect(self.deleteButtonCallBack)
+
+    def visibleToggleCallBack(self):
+        if self.visibleToggleButton.isChecked():
+            self.mainWidget.reinitLayout(None, None, True)
+        else:
+            self.mainWidget.reinitLayout(None, None, False)
+
+    def deleteButtonCallBack(self):
+        w = MessageBox("确定删除", "一旦删除永远不可恢复", self.window())
+        w.yesButton.setStyleSheet(
+            """    color: rgb(240,240,240);background: rgb(255, 0, 0);
+            border: 1px solid rgba(0, 0, 0, 0.073);border-bottom: 1px solid rgba(0, 0, 0, 0.183);
+            border-radius: 5px;padding: 5px 12px 6px 12px;outline: none;""")
+        if w.exec_():  # noqa
+            os.remove(self.path)
+            self.parent().parent().setCurrentPage(self.parent().parent().pageKnowledgeManager)
+
+    def editButtonCallBack(self):
+        self.parent().parent().setCurrentPage(self.parent().parent().pageEdit)
+        self.parent().parent().pageEdit.loadData(self.data)
 
     def saveNewData(self, newData):
         """保存测试完成后的新数据"""
@@ -410,26 +439,26 @@ class PageKnowledgeReview(QWidget, knowledgePreview.Ui_PageKnowledgePreview):
         """TTS: 导出音频"""
         path = QFileDialog.getSaveFileName(self, "选择音频保存的路径", self.knowledgeTitle.text(), "MP3音频(*.mp3)")
         kvkapi.textToSpeech(
-            "知识点," + self.jsonData["name"] + "。" + ";".join(
-                [i["key"] + ": " + i["value"] for i in self.jsonData["knowledge_points"]]),
+            "知识点," + self.data["name"] + "。" + ";".join(
+                [i["key"] + ": " + i["value"] for i in self.data["knowledge_points"]]),
             path[0],
         )
 
     def initData(self, data):
         """初始化数据"""
         self.path = os.path.join('.\\knowledge\\', data[0])
-        self.jsonData = json.loads(open(self.path, "r", encoding="utf-8").read())
+        self.data = json.loads(open(self.path, "r", encoding="utf-8").read())
 
         kv_points_length = 0
-        for i in self.jsonData["knowledge_points"]:
+        for i in self.data["knowledge_points"]:
             kv_points_length += 1 if i["type"] == "kv" else None
 
         self.knowledgeTitle.setText(data[1])
         self.masteryRing.setValue(int(data[4] * 100))
         self.knowledgeInfoTitle.setText(
-            f"{kv_points_length}个知识块   上次复习{pwidgets.format_time(self.jsonData['last_review_time'])}")
+            f"{kv_points_length}个知识块   上次复习{pwidgets.format_time(self.data['last_review_time'])}")
 
-        self.mainWidget.reinitData(self.jsonData)
+        self.mainWidget.reinitData(self.data)
 
 
 class PageEdit(QWidget, edit.Ui_PageEdit):
@@ -467,6 +496,11 @@ class PageEdit(QWidget, edit.Ui_PageEdit):
             self.mainWidget.updateDataFromParent(self.data)
             self.mainWidget.reinitLayout()
 
+    def loadData(self, data):
+        self.data = data
+        self.knowledgeTitle.setText(self.data["name"])
+        self.mainWidget.reinitData(self.data)
+
     def saveTitleData(self):
         """保存标题数据"""
         self.data["name"] = self.knowledgeTitle.text()
@@ -486,6 +520,7 @@ class PageEdit(QWidget, edit.Ui_PageEdit):
         self.commandBar.addAction(Action(FluentIcon.DOWN, "向后放置", triggered=lambda: self.moveBlock(False)))
         self.commandBar.addAction(Action(FluentIcon.DELETE, "删除块", triggered=self.deleteBlock))
         self.commandBar.addAction(Action(FluentIcon.PHOTO, "从图片中提取", triggered=self.OCR))
+        self.commandBar.addAction(Action(FluentIcon.ROBOT, "一键导入", triggered=self.autoImport))
         self.commandBar.addAction(Action(FluentIcon.SAVE, "保存", triggered=self.saveData))
         self.commandBar.addAction(Action(FluentIcon.TAG, "标签", triggered=self.setTags))
         self.commandBar.addAction(Action(FluentIcon.ADD, "新建知识页", triggered=self.newData))
@@ -495,9 +530,66 @@ class PageEdit(QWidget, edit.Ui_PageEdit):
 
         # 设置QSS
         self.knowledgeTitle.setStyleSheet(
-            "background: rgba(0,0,0,0);border: 0;font-size: 29px;color: #FFFFFF") if isDarkTheme() else self.knowledgeTitle.setStyleSheet(
+            "background: rgba(0,0,0,0);border: 0;font-size: 29px;color: #FFFFFF") if isDarkTheme() \
+            else self.knowledgeTitle.setStyleSheet(
             "background: rgba(0,0,0,0);border: 0;font-size: 29px;color: #000000")
         self.saved = False
+
+    def autoImport(self):
+        """一键自动导入"""
+        """调用OCR技术"""
+        path = QFileDialog.getOpenFileName(self, "选择图像", "", "图像文件(*.jpg *.gif *.png *.jpeg *.bmp)")
+        self.w = MessageBoxAutoLoadWaiting(self.window(), path[0])  # noqa
+        self.kvText = ""
+
+        threading.Thread(target=self.importDataThread, args=(path[0],)).start()
+
+        # 等待数据处理完成
+        self.imageHandle = False
+        self.toKV = False
+        self.OCRResult = []
+
+        self.waitForTarget(self.importDataUpdate)
+
+        self.w.exec_()
+
+    def importDataThread(self, path):
+        """自动导入等待进程"""
+
+        # 二值化处理
+        kvkapi.toGray(path)
+        self.imageHandle = True
+
+        # 文本提取
+        self.OCRResult = kvkapi.readText()
+        kvkapi.drawOCRLine(self.OCRResult[1][0])
+
+        # AI修正
+        text = kvkapi.correctText(self.OCRResult[0])
+
+        # Key = Value化
+        text = json.loads(kvkapi.KVText(text))
+
+        for i in text.keys():
+            self.data["knowledge_points"].append({
+                "type": "kv",
+                "key": i,
+                "value": text[i]
+            })
+
+        self.toKV = True
+
+    def importDataUpdate(self):
+        """
+        自动导入循环进程
+        """
+        pixmap = QPixmap(".\\BINARY_PHOTO.png").scaledToWidth(500)
+        self.w.imageFrame.setPixmap(pixmap)
+
+        if self.toKV:
+            self.mainWidget.updateDataFromParent(self.data)
+            self.w.close()
+            self.timer.stop()
 
     def moveBlock(self, forward: True):
         """移动数据块将其调换顺序"""
@@ -589,37 +681,41 @@ class PageEdit(QWidget, edit.Ui_PageEdit):
             parent=self
         )
 
+    def waitForTarget(self, target):
+        self.timer = QTimer()
+        self.timer.setInterval(500)
+        self.timer.timeout.connect(target)  # noqa
+        self.timer.start()
+
     def OCR(self):
         """调用OCR技术"""
         path = QFileDialog.getOpenFileName(self, "选择图像", "", "图像文件(*.jpg *.gif *.png *.jpeg *.bmp)")
         self.w = MessageBoxOCRWaiting(self.window())
         self.ocrText = None
 
-        threading.Thread(target=self.waitingOCR, args=(path[0],)).start()
+        threading.Thread(target=self.OCRThread, args=(path[0],)).start()
 
-        # 初始化计时器
-        self.timer = QTimer()
-        self.timer.setInterval(1000)
-        self.timer.timeout.connect(self.ocrUpdate)
-        self.timer.start()
+        # 等待OCR处理完成
+        self.waitForTarget(self.ocrUpdate)
 
         self.w.exec_()
 
     def ocrUpdate(self):
+        """OCR等待循环进程"""
         if self.ocrText:
-            self.w.textFrame.setText(self.ocrText)
+            self.w.textFrame.setText(self.ocrText[0])  # noqa
             self.w.title.setText("提取完成")
             self.w.progressBar.stop()
             self.timer.stop()
 
-    def waitingOCR(self, path):
+    def OCRThread(self, path):
         """OCR等待进程"""
         self.ocrText = kvkapi.readText(path)
 
     def newData(self):
         """新建知识页"""
         if not self.saved:
-            if MessageBox("当前知识页未保存", "新建将丢弃当前未保存的知识页，确定操作吗", self).exec():
+            if MessageBox("当前知识页未保存", "新建将丢弃当前未保存的知识页，确定操作吗", self.window()).exec():  # noqa
                 self.saved = True
                 self.reinit()
                 InfoBar.success(
@@ -648,11 +744,43 @@ class PageEdit(QWidget, edit.Ui_PageEdit):
 
     def setTags(self):
         """设置标签"""
-        w = PageEditSetTagsBox(self.window(), self.data["tags"])
+        w = PageEditSetTagsBox(self.window(), self.data["tags"])  # noqa
         e = w.exec_()
 
         if e is not None:
-            self.data["tags"] = e
+            self.data["tags"] = e  # noqa
+
+
+class MessageBoxAutoLoadWaiting(MessageBoxBase):
+    data = None
+
+    def __init__(self, parent, path):
+        super().__init__(parent)
+        self.path = path
+
+        self.initUI()
+
+    def initUI(self):
+        """初始化UI"""
+        # 标题
+        self.title = SubtitleLabel(self)
+        self.title.setText("正在提取文本...")
+        self.viewLayout.addWidget(self.title)
+
+        # 图片框
+        self.imageFrame = ImageLabel(self)
+        pixmap = QPixmap(self.path).scaledToWidth(500)
+
+        self.imageFrame.setPixmap(pixmap)
+        self.viewLayout.addWidget(self.imageFrame)
+
+        # 进度条
+        self.progressBar = IndeterminateProgressBar(self)
+        self.viewLayout.addWidget(self.progressBar)
+
+        # 按钮
+        self.hideCancelButton()
+        self.hideYesButton()
 
 
 class MessageBoxOCRWaiting(MessageBoxBase):
@@ -702,7 +830,7 @@ class PageEditSetTagsBox(MessageBoxBase):
 
         self.titleLabel = SubtitleLabel('在下方选中标签', self)
 
-        self.flowWidget = QWidget(self)
+        self.flowWidget = QWidget(self)  # noqa
         self.flowLayout = FlowLayout(self.flowWidget)
 
         # 在布局中添加控件
@@ -731,26 +859,7 @@ class PageEditSetTagsBox(MessageBoxBase):
             return self.data
 
 
-class PageEditShowTextBox(MessageBoxBase):
-    """ Custom message box """
-
-    def __init__(self, parent, text):
-        super().__init__(parent)
-
-        self.titleLabel = SubtitleLabel('图像文本提取', self)
-        self.editor = TextEdit(self)
-        self.editor.setText(text)
-
-        # 在布局中添加控件
-        self.viewLayout.addWidget(self.titleLabel)
-        self.viewLayout.addWidget(self.editor)
-
-        self.yesButton.setText("确定")
-
-        self.widget.setMinimumWidth(350)
-
-
-class PageTest(QWidget, exam.Ui_PageExam):
+class PageTest(QWidget, test.Ui_PageTest):
     answerEditFrameMaxHeight = 500
 
     def __init__(self, *args, **kwargs):
@@ -771,7 +880,7 @@ class PageTest(QWidget, exam.Ui_PageExam):
         self.parent().parent().lock = True
 
         # 获取数据
-        self.data = self.parent().parent().pageKnowledgeReview.jsonData
+        self.data = self.parent().parent().pageKnowledgeReview.data
 
         # 获取数据中信息
         self.no_question = len(self.data["knowledge_points"]) - 1  # 总题数
@@ -789,9 +898,9 @@ class PageTest(QWidget, exam.Ui_PageExam):
         )
 
         # 测试
-        self.toExam(self.data["knowledge_points"][self.current_question])
+        self.TestOne(self.data["knowledge_points"][self.current_question])
 
-    def toExam(self, question):
+    def TestOne(self, question):
         """测试某题"""
 
         self.current_step = 0
@@ -811,7 +920,7 @@ class PageTest(QWidget, exam.Ui_PageExam):
         self.report["end_time"] = time.time()
 
         # 更新数据到本地知识点
-        newData = self.parent().parent().pageKnowledgeReview.jsonData.copy()
+        newData = self.parent().parent().pageKnowledgeReview.data.copy()
         newData["last_review_time"] = time.time()
         newData["mastery_level"] = (self.report["no_all"] - self.report["no_wrong"]) / self.report["no_all"]
 
@@ -841,7 +950,7 @@ class PageTest(QWidget, exam.Ui_PageExam):
                 "color: #000000")
             self.enterButton.setText("提交")
 
-            self.toExam(self.data["knowledge_points"][self.current_question])
+            self.TestOne(self.data["knowledge_points"][self.current_question])
 
     def correcting(self):
         try:
@@ -885,7 +994,7 @@ class PageTest(QWidget, exam.Ui_PageExam):
         self.startTest()
 
 
-class PageKnowledgeTestReport(QWidget, examReport.Ui_PageExamReport):
+class PageKnowledgeTestReport(QWidget, testReport.Ui_PageTestReport):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.setupUi(self)
@@ -989,7 +1098,7 @@ if __name__ == '__main__':
     # 设置语言
     locale = QLocale()
     translator = FluentTranslator(locale)
-    app.installTranslator(translator)
+    app.installTranslator(translator)  # noqa
 
     # 运行
     mainwindow = MainWindow()
