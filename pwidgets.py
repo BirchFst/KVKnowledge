@@ -167,13 +167,10 @@ class KnowledgeView(QWidget):
                     c = KnowledgeCard(self.lines[line])
                     c.setData(self.data["knowledge_points"][card])
 
+                    c.showAnswer() if visitable else c.hideAnswer()
+
                     # 添加至布局
                     self.lines[line].layout().addWidget(c)
-
-                    if visitable is None:
-                        return
-
-                    c.showAnswer() if visitable else c.hideAnswer()
 
 
 class EditKeyFrame(LineEdit):
