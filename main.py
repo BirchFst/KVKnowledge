@@ -314,6 +314,9 @@ class PageKnowledgeManager(QWidget, library.Ui_PageLibrary):
     def initLibrary(self):
         """初始化仓库信息"""
 
+        # 更新遗忘率
+        kvkapi.updateAttenuation()
+
         # 获取知识点数据
         self.data = kvkapi.getKnowledgeData()
 
@@ -354,7 +357,7 @@ class PageKnowledgeManager(QWidget, library.Ui_PageLibrary):
             itemWidget.setLayout(itemLayout)
             self.knowledgeTable.setCellWidget(r, 2, itemWidget)
 
-            # 设置第三列知识点掌握程度
+            # 设置第四列知识点掌握程度
             itemLayout = QVBoxLayout()
             itemLayout.setSpacing(5)
             itemLayout.setContentsMargins(18, 18, 18, 18)
@@ -419,7 +422,7 @@ class PageKnowledgeReview(QWidget, knowledgeReview.Ui_PageKnowledgeReview):
         w = MessageBox("确定删除", "一旦删除永远不可恢复", self.window())
         w.yesButton.setStyleSheet(
             """    color: rgb(240,240,240);background: rgb(255, 0, 0);
-            border: 1px solid rgba(0, 0, 0, 0.073);border-bottom: 1px solid rgba(0, 0, 0, 0.183);
+            border: 1px solid rgba(0, 0, 0, 0.073);border-bottom: 2px solid rgba(0, 0, 0, 0.183);
             border-radius: 5px;padding: 5px 12px 6px 12px;outline: none;""")
         if w.exec_():  # noqa
             os.remove(self.path)
@@ -468,7 +471,9 @@ class PageEdit(QWidget, edit.Ui_PageEdit):
         "tags": [],
         "created_time": time.time(),
         "last_review_time": time.time(),
-        "mastery_level": 0.0,
+        "review_time": 1,
+        "mastery_level": 1.0,
+        "attenuation": 0,
         "knowledge_points": []
     }
 
@@ -1049,6 +1054,9 @@ class PageHome(QWidget, home.Ui_PageHome):
         self.welcomeLabel.setText(f"{greeting},  {username}!")
 
     def reinit(self):
+        # 更新遗忘率
+        kvkapi.updateAttenuation()
+
         # 筛选数据
         self.data = kvkapi.getKnowledgeData()
         self.dataLowMastery = sorted(self.data, key=lambda x: x[-1])
@@ -1087,7 +1095,7 @@ def setHighDpi():
 if __name__ == '__main__':
     # 设置主题颜色
     setThemeColor("#0078D4")
-    setTheme(Theme.AUTO)
+    setTheme(Theme.LIGHT)
 
     # 适应Dpi
     setHighDpi()

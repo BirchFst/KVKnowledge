@@ -8,6 +8,7 @@
 @Contact :   https://github.com/DrakHorse
 @License :   GNU GENERAL PUBLIC LICENSE
 """
+import math
 import os
 
 import cv2
@@ -29,7 +30,9 @@ from time import mktime
 SD_APP_ID = "your_app_id"
 SD_API_SECRET = "your_api_secret"
 SD_API_KEY = "your_api_key"
-DEBUG_MODE = False
+DEBUG_MODE = True
+MEMORY_INTENSITY = 3.5  # float: 2 - 5
+
 exec(open(".\\ApiData").read(), globals(), globals())
 
 sd_answer = ""
@@ -170,7 +173,7 @@ def getKnowledgeData():
             file_data["name"],
             time.strftime("%Y.%m.%d", time.gmtime(file_data["last_review_time"])),
             file_data["tags"],
-            file_data["mastery_level"]
+            file_data["mastery_level"] * (1 - file_data["attenuation"])
         ])
 
     return knowledge_lst
@@ -278,3 +281,37 @@ def KVText(text):
     sd_answer = ""
     sd_send(SD_APP_ID, SD_API_KEY, SD_API_SECRET, "ws://spark-api.xf-yun.com/v2.1/chat", "generalv2", question)
     return sd_answer
+
+
+def updateAttenuation():
+    """更新知识衰减率"""
+    for file in getKnowledgeData():
+        # 读取数据
+        data = json.loads(open(os.path.join(".\\knowledge\\", file[0]), "r", encoding="utf-8").read())
+
+        # 计算数据
+        t = (time.time() - data["last_review_time"]) / 3600
+        try:
+            s = MEMORY_INTENSITY ** data["review_time"]
+            a = 1 - getMastery(t, s)
+
+        except OverflowError:
+            # 当记忆率接近无穷大时没有遗忘率
+            a = 0
+
+        # 写入数据
+        data["attenuation"] = a
+        with open(os.path.join(".\\knowledge\\", file[0]), "w", encoding="utf-8") as f:
+            f.write(json.dumps(data))
+            f.close()
+
+
+def getMastery(t, s):
+    """
+    计算掌握率
+
+    :param t: 上一次复习时间
+    :param s: 记忆强度
+    """
+    a = math.exp(-t / s)
+    return a
