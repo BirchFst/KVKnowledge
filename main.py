@@ -220,6 +220,11 @@ class PageKnowledgeManager(QWidget, library.Ui_PageLibrary):
 
         self.initLibrary()
 
+        self.parent().setCurrentIndex(2, duration=0)
+        self.parent().setCurrentIndex(1, duration=0)
+        self.parent().setCurrentIndex(2, duration=0)
+        self.parent().setCurrentIndex(1, duration=0)
+
     def filterOptionsCallBack(self, tag):
         """
         筛选方式更改时的回调函数
@@ -228,6 +233,11 @@ class PageKnowledgeManager(QWidget, library.Ui_PageLibrary):
         self.filterSelector.setText(tag)
 
         self.initLibrary()
+
+        self.parent().setCurrentIndex(2, duration=0)
+        self.parent().setCurrentIndex(1, duration=0)
+        self.parent().setCurrentIndex(2, duration=0)
+        self.parent().setCurrentIndex(1, duration=0)
 
     def enterKnowledgeCallBack(self, item):
         self.parent().parent().stackWidget.setCurrentWidget(self.parent().parent().pageKnowledgeReview)  # noqa
@@ -242,7 +252,7 @@ class PageKnowledgeManager(QWidget, library.Ui_PageLibrary):
         for c in self.collationList.keys():
             # 添加菜单项并绑定事件
             action = QAction(self.collationList[c][1](), self.collationList[c][0])
-            exec(f"action.triggered.connect(lambda :self.callBackSortOptions({c}))", locals(), locals())  # noqa
+            exec(f"action.triggered.connect(lambda :self.sortOptionsCallBack({c}))", locals(), locals())  # noqa
 
             self.collationSelectorMenu.addAction(action)
 
@@ -254,7 +264,7 @@ class PageKnowledgeManager(QWidget, library.Ui_PageLibrary):
 
         for tag in self.tags:
             action = QAction(FluentIcon.TAG.icon(), tag)
-            exec(f"action.triggered.connect(lambda :self.callBackFilterOptions(\"{tag}\"))", locals(), locals())  # noqa
+            exec(f"action.triggered.connect(lambda :self.filterOptionsCallBack(\"{tag}\"))", locals(), locals())  # noqa
 
             self.filterSelectorMenu.addAction(action)
 
@@ -362,6 +372,7 @@ class PageKnowledgeManager(QWidget, library.Ui_PageLibrary):
             itemLayout.setSpacing(5)
             itemLayout.setContentsMargins(18, 18, 18, 18)
 
+            print(row)
             item = QLabel(str(int(row[4] * 100)) + "%")
             item.setStyleSheet("font-family: SIMHEI;font-size: 13px;color: black;") if not isDarkTheme() \
                 else item.setStyleSheet("font-family: SIMHEI;font-size: 13px;color: white;")
@@ -385,11 +396,10 @@ class PageKnowledgeManager(QWidget, library.Ui_PageLibrary):
         self.initLibrary()
 
         # 刷新2次保证界面不错乱(某种玄学Bug导致)
-        if self.parent().currentIndex() != 1:
-            self.parent().setCurrentIndex(2, duration=0)
-            self.parent().setCurrentIndex(1, duration=0)
-            self.parent().setCurrentIndex(2, duration=0)
-            self.parent().setCurrentIndex(1, duration=200)
+        self.parent().setCurrentIndex(2, duration=0)
+        self.parent().setCurrentIndex(1, duration=0)
+        self.parent().setCurrentIndex(2, duration=0)
+        self.parent().setCurrentIndex(1, duration=200)
 
 
 class PageKnowledgeReview(QWidget, knowledgeReview.Ui_PageKnowledgeReview):
@@ -400,7 +410,7 @@ class PageKnowledgeReview(QWidget, knowledgeReview.Ui_PageKnowledgeReview):
 
     def initUI(self):
         """初始化UI"""
-        self.visibleToggleButton.setIcon(FluentIcon.HIDE)
+        self.visibleToggleButton.setIcon(FluentIcon.VIEW)
 
         self.SingleDirectionScrollArea.smoothScroll.orient = Qt.Horizontal
 
@@ -493,9 +503,15 @@ class PageEdit(QWidget, edit.Ui_PageEdit):
                 "tags": [],
                 "created_time": time.time(),
                 "last_review_time": time.time(),
-                "mastery_level": 0.0,
+                "review_time": 1,
+                "mastery_level": 1.0,
+                "attenuation": 0,
                 "knowledge_points": []
             }
+
+            print(self.data)
+            self.data["created_time"] = time.time()
+            self.data["last_review_time"] = time.time()
 
             self.saved = False
             self.mainWidget.updateDataFromParent(self.data)
@@ -570,16 +586,21 @@ class PageEdit(QWidget, edit.Ui_PageEdit):
         kvkapi.drawOCRLine(self.OCRResult[1][0])
 
         # AI修正
-        text = kvkapi.correctText(self.OCRResult[0])
+        c = kvkapi.correctText(self.OCRResult[0])
+
+        text = c if c.split(" ") else self.OCRResult[0]
 
         # Key = Value化
-        text = json.loads(kvkapi.KVText(text))
+        kv = kvkapi.KVText(text)
+        text = json.loads(kv.replace("\n", ""))
+
+        print(text)
 
         for i in text.keys():
             self.data["knowledge_points"].append({
                 "type": "kv",
                 "key": i,
-                "value": text[i]
+                "value": text[i],
             })
 
         self.toKV = True
@@ -661,6 +682,8 @@ class PageEdit(QWidget, edit.Ui_PageEdit):
 
     def saveData(self):
         """保存数据"""
+
+        self.saveTitleData()
 
         # 保存当前知识块数据
         try:
@@ -877,6 +900,8 @@ class PageTest(QWidget, test.Ui_PageTest):
         self.answerEdit.setMaximumHeight(100)
         self.answerEdit.textChanged.connect(self.updateAnswerEditFrameHeight)
 
+        self.progressLabel.setWordWrap(True)
+
         self.enterButton.clicked.connect(self.callBackEnterButton)
 
     def startTest(self):
@@ -982,6 +1007,8 @@ class PageTest(QWidget, test.Ui_PageTest):
 
         self.enterButton.setText("继续测试")
         self.current_step = 1
+
+        print(self.report)
 
         return
 

@@ -394,13 +394,13 @@ class HomeCard(CardWidget):
 
         self.info.setText(  # 信息标签
             f"{kv_points_length}个知识块   上次复习{format_time(self.jsonData['last_review_time'])}   "
-            f"掌握{int(self.jsonData['mastery_level'] * 100)}%")
+            f"掌握{int(self.jsonData['mastery_level'] * (1 - self.jsonData['attenuation']) * 100)}%")
 
         keys = [i["key"] for i in self.jsonData["knowledge_points"]]
         shortKeys = '   '.join(keys)[:40] if len('   '.join(keys)) > 40 else '   '.join(keys)
         self.preview.setText(f"{shortKeys}{'...' if len('   '.join(keys)) > 20 else ''}")  # Key预览标签
 
-        self.progress.setValue(int(self.jsonData["mastery_level"] * 100))  # 设置进度条值
+        self.progress.setValue(int(self.jsonData['mastery_level'] * (1 - self.jsonData['attenuation']) * 100))  # 设置进度条值
 
     def mouseReleaseEvent(self, e):
         super().mouseReleaseEvent(e)

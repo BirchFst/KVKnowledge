@@ -30,7 +30,7 @@ from time import mktime
 SD_APP_ID = "your_app_id"
 SD_API_SECRET = "your_api_secret"
 SD_API_KEY = "your_api_key"
-DEBUG_MODE = True
+DEBUG_MODE = False
 MEMORY_INTENSITY = 3.5  # float: 2 - 5
 
 exec(open(".\\ApiData").read(), globals(), globals())
@@ -273,7 +273,8 @@ def KVText(text):
         "content": 'Summarize the notes I provided in Key=Value format, such as {"text": "由于鸦片泛滥，林则徐发动虎门销烟运动'
                    '虎门销烟是禁烟斗争的胜利..."}=>'
                    '{"虎门销烟的意义": "是禁烟斗争的胜利","虎门硝烟的起因": "鸦片泛滥"}. You need to ensure that someone who has '
-                   'reviewed can look at the Key text and retell the Value text. I input them in JSON format, and you'
+                   'reviewed can look at the Key text and retell the Value text. Both key text and value text must be '
+                   'strings。I input them in JSON format, and you'
                    ' also output them in '
                    'JSON format. Ensure that the JSON text you provide can be read by json.loads\n'
                    '{"text": "' + text + '"}'
